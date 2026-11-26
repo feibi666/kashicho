@@ -331,11 +331,12 @@ function loadScript(src){
 async function getTokenizer(){
   if(tokenizer) return tokenizer;
   const already = !$('#mask').classList.contains('hidden');
-  if(!already) mask(true, '正在准备注音词典\n首次约 18MB，之后会缓存');
+  if(!already) mask(true, '正在准备注音词典\n首次约 17MB，只下一次，之后走本地缓存');
   try{
-    if(!window.kuromoji) await loadScript('https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js');
+    /* 全部走同域相对路径：不依赖任何第三方 CDN，国内不会被 jsdelivr 卡住 */
+    if(!window.kuromoji) await loadScript('./kuromoji.js');
     tokenizer = await new Promise((res, rej)=>{
-      window.kuromoji.builder({ dicPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/' })
+      window.kuromoji.builder({ dicPath: './dict/' })
         .build((err, t) => err ? rej(err) : res(t));
     });
   }finally{
