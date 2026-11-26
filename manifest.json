@@ -1,0 +1,17 @@
+{
+  "name": "歌詞帳",
+  "short_name": "歌詞帳",
+  "description": "本地日文歌词假名注音 + 逐句译文 + 单句循环",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBFAF7",
+  "theme_color": "#FBFAF7",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
