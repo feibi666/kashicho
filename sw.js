@@ -1,6 +1,6 @@
-const SHELL = 'kashicho-shell-v9';
+const SHELL = 'kashicho-shell-v10';
 const DICT = 'kashicho-dict-v3';
-const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './kuromoji.js'];
+const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './kuromoji.js', './dict-worker.js'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();

@@ -320,52 +320,101 @@ const DB = (()=>{
 })();
 
 /* ================= 分词 / 注音 ================= */
-let tokenizer = null;
+/* 词典构建全部放在 Worker 里：kuromoji 构建 17MB 词典是同步 CPU 密集操作，
+   留在主线程浏览器会弹「此页面没有响应」。主线程只负责发文本、收 token。 */
+let dictWorker = null;
+let workerReady = null;
+let msgSeq = 0;
+const pendingTokens = new Map();
+
+function startDictWorker(){
+  if(workerReady) return workerReady;
+  dictWorker = new Worker('./dict-worker.js');
+  workerReady = new Promise((res, rej)=>{
+    let settled = false;
+    dictWorker.onmessage = (e)=>{
+      const d = e.data || {};
+      if(d.type === 'ready'){ settled = true; res(); return; }
+      if(d.type === 'fatal'){ settled = true; rej(new Error(d.message || '词典加载失败')); return; }
+      if(d.type === 'tokens'){
+        const p = pendingTokens.get(d.id);
+        if(p){ pendingTokens.delete(d.id); p.res(d.tokens); }
+        return;
+      }
+      if(d.type === 'error'){
+        const p = pendingTokens.get(d.id);
+        if(p){ pendingTokens.delete(d.id); p.rej(new Error(d.message || '分词失败')); }
+      }
+    };
+    dictWorker.onerror = (e)=>{
+      const err = new Error((e && e.message) || 'Worker 加载失败');
+      if(!settled){ settled = true; rej(err); }
+      for(const [, p] of pendingTokens) p.rej(err);
+      pendingTokens.clear();
+    };
+    dictWorker.postMessage({ type: 'init' });
+  });
+  return workerReady;
+}
+
+/* 向 Worker 要分词结果，返回 Promise<token[]> */
+function workerTokenize(text){
+  return new Promise((res, rej)=>{
+    const id = ++msgSeq;
+    pendingTokens.set(id, { res, rej });
+    dictWorker.postMessage({ type: 'tokenize', text, id });
+  });
+}
+
+/* ---------- 主线程兜底 ----------
+   Worker 万一不可用（老浏览器 / 被策略拦），退回主线程构建。
+   代价是会短暂卡住界面，但保证一定能出注音。 */
+let mainTok = null;
+let useMainTok = false;
+let dictReady = false;
+
 function loadScript(src){
   return new Promise((res, rej)=>{
     const s = document.createElement('script');
-    s.src = src; s.onload = res; s.onerror = ()=>rej(new Error('词典脚本加载失败，检查网络'));
+    s.src = src; s.onload = res; s.onerror = ()=>rej(new Error('kuromoji.js 加载失败'));
     document.head.appendChild(s);
   });
 }
-/* 词典双源：主源走 jsdelivr 镜像（实测 500KB/s+），不通就退回同域 ./dict/（慢但一定在） */
-const DICT_REMOTE = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
-const DICT_LOCAL  = './dict/';
-
-/* 拿 306 字节的 unk_char.dat.gz 探活，1.5 秒不回就认输，别让用户干等 */
-async function pickDicPath(){
-  try{
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 1500);
-    const r = await fetch(DICT_REMOTE + 'unk_char.dat.gz', { signal: ctl.signal });
-    clearTimeout(timer);
-    if(r && r.ok) return DICT_REMOTE;
-  }catch(e){}
-  return DICT_LOCAL;
-}
-function buildWith(dicPath){
-  return new Promise((res, rej)=>{
-    window.kuromoji.builder({ dicPath }).build((err, t) => err ? rej(err) : res(t));
+async function buildOnMainThread(){
+  if(mainTok) return mainTok;
+  if(!window.kuromoji) await loadScript('./kuromoji.js');
+  mainTok = await new Promise((res, rej)=>{
+    window.kuromoji.builder({ dicPath: './dict/' }).build((err, t)=> err ? rej(err) : res(t));
   });
+  return mainTok;
 }
+
 async function getTokenizer(){
-  if(tokenizer) return tokenizer;
+  if(dictReady) return;
   const already = !$('#mask').classList.contains('hidden');
   if(!already) mask(true, '正在准备注音词典\n首次约 17MB，只下一次，之后走本地缓存');
   try{
-    if(!window.kuromoji) await loadScript('./kuromoji.js');
-    let dic = await pickDicPath();
     try{
-      tokenizer = await buildWith(dic);
+      await Promise.race([
+        startDictWorker(),
+        new Promise((_, rej)=> setTimeout(()=> rej(new Error('WORKER_TIMEOUT')), 75000))
+      ]);
     }catch(e){
-      if(dic === DICT_LOCAL) throw e;
-      dic = DICT_LOCAL;            // 主源半路失败，换本地再来一次
-      tokenizer = await buildWith(dic);
+      /* Worker 挂了或不吭声 → 换主线程，慢但一定成 */
+      try{ if(dictWorker) dictWorker.terminate(); }catch(_){}
+      dictWorker = null; workerReady = null;
+      await buildOnMainThread();
+      useMainTok = true;
     }
+    dictReady = true;
   }finally{
     if(!already) mask(false);
   }
-  return tokenizer;
+}
+
+function tokenizeText(text){
+  if(useMainTok && mainTok) return Promise.resolve(mainTok.tokenize(text) || []);
+  return workerTokenize(text);
 }
 const kata2hira = s => s.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
 const hira2kata = s => s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
@@ -440,9 +489,9 @@ function rubyFor(tk){
   if(!KANJI.test(surf)) return esc(surf);
   return rubyWrap(surf, tk.reading || tk.pronunciation);
 }
-function annotatePlain(text){
+async function annotatePlain(text){
   if(!text) return '';
-  const tks = mergeTokens(tokenizer.tokenize(text));
+  const tks = mergeTokens(await tokenizeText(text));
   let out = '';
   for(const tk of tks) out += rubyFor(tk);
   return out;
@@ -453,19 +502,18 @@ function annotatePlain(text){
    （笑）(Wow)（ざわ…）这类会被放过，原样显示 */
 const RUBY_PAREN = /([\u4e00-\u9fff\u3005]+[\u3040-\u309f]*)[\(（\[【]([\u3040-\u309f\u30a0-\u30ff\u30fc]+)[\)）\]】]/g;
 
-/* kuromoji 的 tokenize() 是同步返回数组，不接受回调 */
-function annotate(text){
+/* kuromoji 的 tokenize() 是同步返回数组，不接受回调；这里改由 Worker 异步返回 */
+async function annotate(text){
   if(!text) return '';
-  if(!tokenizer) return esc(text);
   RUBY_PAREN.lastIndex = 0;
   let out = '', last = 0, m;
   while((m = RUBY_PAREN.exec(text))){
-    if(m.index > last) out += annotatePlain(text.slice(last, m.index));
+    if(m.index > last) out += await annotatePlain(text.slice(last, m.index));
     out += rubyWrap(m[1], m[2]);
     last = m.index + m[0].length;
   }
-  if(!last) return annotatePlain(text);
-  if(last < text.length) out += annotatePlain(text.slice(last));
+  if(!last) return await annotatePlain(text);
+  if(last < text.length) out += await annotatePlain(text.slice(last));
   return out;
 }
 
@@ -822,7 +870,7 @@ async function buildLines(){
   await getTokenizer();
   applyDict(rec.dict);
   lines = rec.entries.map(e => ({ t: 0, jp: e.jp || '', zh: e.zh || '', html: '' }));
-  for(const ln of lines) ln.html = annotate(ln.jp);
+  for(const ln of lines) ln.html = await annotate(ln.jp);
   recalcTimes();
   renderLyrics();
   syncCur(true);
