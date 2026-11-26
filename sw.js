@@ -1,4 +1,4 @@
-const SHELL = 'kashicho-shell-v10';
+const SHELL = 'kashicho-shell-v11';
 const DICT = 'kashicho-dict-v3';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './kuromoji.js', './dict-worker.js'];
 
@@ -27,8 +27,10 @@ self.addEventListener('fetch', (e) => {
   let url;
   try { url = new URL(req.url); } catch (err) { return; }
 
-  // 分词词典（同域 ./dict/ 或 jsdelivr 镜像）：纯缓存优先，词典不会变，下完就长期复用
-  if (/\.dat\.gz$/.test(url.pathname)) {
+  // 同域的分词词典（./dict/*.dat.gz）：纯缓存优先，词典不会变，下完就长期复用
+  // 跨域的那份（jsdelivr）刻意不拦：它自带 max-age=604800，浏览器 HTTP 缓存足够，
+  // 多一层 SW 转发只会增加「请求挂住」的风险
+  if (url.origin === location.origin && /\.dat\.gz$/.test(url.pathname)) {
     e.respondWith((async () => {
       const c = await caches.open(DICT);
       const hit = await c.match(req);

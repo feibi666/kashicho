@@ -332,10 +332,39 @@ function startDictWorker(){
   dictWorker = new Worker('./dict-worker.js');
   workerReady = new Promise((res, rej)=>{
     let settled = false;
+    let lastStep = '启动';
+    let lastAt = Date.now();
+    /* 看门狗：Worker 静默挂起时不会有任何 onerror，只能靠「多久没进展」判断 */
+    const hb = setInterval(()=>{
+      if(settled){ clearInterval(hb); return; }
+      if(Date.now() - lastAt > 45000){
+        clearInterval(hb);
+        settled = true;
+        console.warn('[词典] 45 秒无进展，判定 Worker 卡死 @ ' + lastStep);
+        rej(new Error('WORKER_STALL @ ' + lastStep));
+      }
+    }, 3000);
+    const done = (fn, arg)=>{
+      if(settled) return;
+      settled = true; clearInterval(hb);
+      fn(arg);
+    };
+
     dictWorker.onmessage = (e)=>{
       const d = e.data || {};
-      if(d.type === 'ready'){ settled = true; res(); return; }
-      if(d.type === 'fatal'){ settled = true; rej(new Error(d.message || '词典加载失败')); return; }
+      if(d.type === 'step'){
+        lastStep = d.step + (d.detail ? ' — ' + d.detail : '');
+        lastAt = Date.now();
+        console.log('[词典] ' + lastStep);
+        const mt = document.getElementById('maskText');
+        const mk = document.getElementById('mask');
+        if(mt && mk && !mk.classList.contains('hidden')){
+          mt.textContent = '正在准备注音词典\n' + lastStep;
+        }
+        return;
+      }
+      if(d.type === 'ready'){ console.log('[词典] 就绪'); done(res); return; }
+      if(d.type === 'fatal'){ console.error('[词典] 失败: ' + d.message); done(rej, new Error(d.message || '词典加载失败')); return; }
       if(d.type === 'tokens'){
         const p = pendingTokens.get(d.id);
         if(p){ pendingTokens.delete(d.id); p.res(d.tokens); }
@@ -348,7 +377,8 @@ function startDictWorker(){
     };
     dictWorker.onerror = (e)=>{
       const err = new Error((e && e.message) || 'Worker 加载失败');
-      if(!settled){ settled = true; rej(err); }
+      console.error('[词典] Worker 报错: ' + err.message);
+      if(!settled){ settled = true; clearInterval(hb); rej(err); }
       for(const [, p] of pendingTokens) p.rej(err);
       pendingTokens.clear();
     };
@@ -395,16 +425,17 @@ async function getTokenizer(){
   if(!already) mask(true, '正在准备注音词典\n首次约 17MB，只下一次，之后走本地缓存');
   try{
     try{
-      await Promise.race([
-        startDictWorker(),
-        new Promise((_, rej)=> setTimeout(()=> rej(new Error('WORKER_TIMEOUT')), 75000))
-      ]);
+      /* 超时由 startDictWorker 内部的看门狗负责，这里只等结果 */
+      await startDictWorker();
     }catch(e){
       /* Worker 挂了或不吭声 → 换主线程，慢但一定成 */
+      console.warn('[词典] 转主线程兜底，原因: ' + ((e && e.message) || e));
       try{ if(dictWorker) dictWorker.terminate(); }catch(_){}
       dictWorker = null; workerReady = null;
+      mask(true, '正在准备注音词典\n（界面可能短暂无响应，请点「等待」）');
       await buildOnMainThread();
       useMainTok = true;
+      console.log('[词典] 主线程构建完成');
     }
     dictReady = true;
   }finally{
