@@ -328,17 +328,40 @@ function loadScript(src){
     document.head.appendChild(s);
   });
 }
+/* 词典双源：主源走 jsdelivr 镜像（实测 500KB/s+），不通就退回同域 ./dict/（慢但一定在） */
+const DICT_REMOTE = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
+const DICT_LOCAL  = './dict/';
+
+/* 拿 306 字节的 unk_char.dat.gz 探活，1.5 秒不回就认输，别让用户干等 */
+async function pickDicPath(){
+  try{
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch(DICT_REMOTE + 'unk_char.dat.gz', { signal: ctl.signal });
+    clearTimeout(timer);
+    if(r && r.ok) return DICT_REMOTE;
+  }catch(e){}
+  return DICT_LOCAL;
+}
+function buildWith(dicPath){
+  return new Promise((res, rej)=>{
+    window.kuromoji.builder({ dicPath }).build((err, t) => err ? rej(err) : res(t));
+  });
+}
 async function getTokenizer(){
   if(tokenizer) return tokenizer;
   const already = !$('#mask').classList.contains('hidden');
   if(!already) mask(true, '正在准备注音词典\n首次约 17MB，只下一次，之后走本地缓存');
   try{
-    /* 全部走同域相对路径：不依赖任何第三方 CDN，国内不会被 jsdelivr 卡住 */
     if(!window.kuromoji) await loadScript('./kuromoji.js');
-    tokenizer = await new Promise((res, rej)=>{
-      window.kuromoji.builder({ dicPath: './dict/' })
-        .build((err, t) => err ? rej(err) : res(t));
-    });
+    let dic = await pickDicPath();
+    try{
+      tokenizer = await buildWith(dic);
+    }catch(e){
+      if(dic === DICT_LOCAL) throw e;
+      dic = DICT_LOCAL;            // 主源半路失败，换本地再来一次
+      tokenizer = await buildWith(dic);
+    }
   }finally{
     if(!already) mask(false);
   }

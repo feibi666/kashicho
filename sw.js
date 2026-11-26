@@ -1,5 +1,5 @@
-const SHELL = 'kashicho-shell-v8';
-const DICT = 'kashicho-dict-v2';
+const SHELL = 'kashicho-shell-v9';
+const DICT = 'kashicho-dict-v3';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './kuromoji.js'];
 
 self.addEventListener('install', (e) => {
@@ -27,8 +27,8 @@ self.addEventListener('fetch', (e) => {
   let url;
   try { url = new URL(req.url); } catch (err) { return; }
 
-  // 分词词典（同源 ./dict/*.dat.gz）：纯缓存优先，词典不会变，下完就长期复用
-  if (url.origin === location.origin && /\/dict\/|\.dat\.gz$/.test(url.pathname)) {
+  // 分词词典（同域 ./dict/ 或 jsdelivr 镜像）：纯缓存优先，词典不会变，下完就长期复用
+  if (/\.dat\.gz$/.test(url.pathname)) {
     e.respondWith((async () => {
       const c = await caches.open(DICT);
       const hit = await c.match(req);
