@@ -1,10 +1,18 @@
 /* 词典构建放在 Worker 里做。
    kuromoji 构建 17MB 词典是同步 CPU 密集操作，留在主线程会让浏览器
    弹出「此页面没有响应」——这不是网络慢，是主线程被占死。
-   每一步都 postMessage 上报，主线程据此显示进度，卡住时能立刻看出卡在哪。 */
+
+   每一步都 postMessage 上报。尤其是下载阶段：17MB 在慢网要一两分钟，
+   不报进度主线程就分不清「在下载」和「卡死了」。 */
 
 const DICT_REMOTE = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
 const DICT_LOCAL  = './dict/';
+
+/* kuromoji 要的 12 个词典分片 */
+const FILES = [
+  'base.dat.gz', 'cc.dat.gz', 'check.dat.gz', 'tid.dat.gz', 'tid_map.dat.gz', 'tid_pos.dat.gz',
+  'unk.dat.gz', 'unk_char.dat.gz', 'unk_compat.dat.gz', 'unk_invoke.dat.gz', 'unk_map.dat.gz', 'unk_pos.dat.gz'
+];
 
 let tokenizer = null;
 
@@ -16,33 +24,40 @@ function buildWith(dicPath){
   });
 }
 
-/* kuromoji 内部走 XMLHttpRequest，不是 fetch。
-   两件事必须分开测：fetch 通不代表 XHR 通（跨域时尤其） */
-function xhrProbe(url, ms){
-  return Promise.race([
-    new Promise(res => {
+/* 先把 12 个分片自己下载一遍：
+   1. 能报 MB 进度，主线程的看门狗靠它判断「还在动」
+   2. 读完后这些响应进了浏览器 HTTP 缓存（jsdelivr 是 max-age=604800），
+      kuromoji 随后用 XHR 请求同一 URL 会直接命中缓存，构建阶段从几十秒降到几秒 */
+async function preload(base){
+  let done = 0, bytes = 0, failed = 0;
+  const CONC = 4;
+  let idx = 0;
+  const run = async () => {
+    while(idx < FILES.length){
+      const f = FILES[idx++];
       try{
-        const x = new XMLHttpRequest();
-        x.open('GET', url);
-        x.responseType = 'arraybuffer';
-        x.onload  = () => res('ok:' + x.status + ':' + (x.response ? x.response.byteLength : 0));
-        x.onerror = () => res('error');
-        x.ontimeout = () => res('timeout');
-        x.timeout = ms;
-        x.send();
-      }catch(e){ res('throw:' + ((e && e.message) || e)); }
-    }),
-    /* XHR 的 timeout 在某些环境下不生效，外面再套一层硬超时 */
-    new Promise(res => setTimeout(() => res('hang'), ms + 1500))
-  ]);
+        const r = await fetch(base + f);
+        if(!r.ok){ failed++; say('download', f + ' 失败 HTTP ' + r.status); continue; }
+        const buf = await r.arrayBuffer();
+        bytes += buf.byteLength;
+        done++;
+        say('download', done + '/' + FILES.length + ' · ' + (bytes / 1048576).toFixed(1) + 'MB');
+      }catch(e){
+        failed++;
+        say('download', f + ' 出错 ' + ((e && e.message) || e));
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: CONC }, run));
+  return { done, failed, mb: bytes / 1048576 };
 }
 
 async function init(){
   say('import');
   importScripts('./kuromoji.js');
-  say('imported', 'kuromoji ok');
+  say('imported', 'kuromoji 已就绪');
 
-  /* 1. 先判断快源是否可达（fetch） */
+  /* 1. 探活快源 */
   let dic = DICT_LOCAL;
   try{
     const ctl = new AbortController();
@@ -50,33 +65,29 @@ async function init(){
     const r = await fetch(DICT_REMOTE + 'unk_char.dat.gz', { signal: ctl.signal });
     clearTimeout(timer);
     if(r && r.ok) dic = DICT_REMOTE;
-    say('probe-fetch', 'status ' + (r && r.status));
+    say('probe', '快源 HTTP ' + (r && r.status));
   }catch(e){
-    say('probe-fetch', '失败 ' + ((e && e.message) || e));
+    say('probe', '快源不通，用站内词典');
   }
 
-  /* 2. 关键验证：kuromoji 真正要用的 XHR 能不能完成 */
-  const xp = await xhrProbe(dic + 'unk_char.dat.gz', 6000);
-  say('probe-xhr', xp);
-
-  /* 快源的 XHR 不可用（挂起/跨域被拒）→ 退回同域，慢但能成 */
-  if(!/^ok:200:/.test(xp) && dic === DICT_REMOTE){
-    dic = DICT_LOCAL;
-    say('downgrade', '快源 XHR 不可用，改用同域词典');
-    const xp2 = await xhrProbe(dic + 'unk_char.dat.gz', 6000);
-    say('probe-xhr-local', xp2);
-    if(!/^ok:200:/.test(xp2)){
-      throw new Error('同域 XHR 也不可用（' + xp2 + '），词典无法加载');
+  /* 2. 快源可用就先并发下载，顺带把 HTTP 缓存预热 */
+  if(dic === DICT_REMOTE){
+    const pf = await preload(DICT_REMOTE);
+    if(pf.failed > 0){
+      say('downgrade', pf.done + ' 个成功 / ' + pf.failed + ' 个失败，改用站内词典');
+      dic = DICT_LOCAL;
+    }else{
+      say('preloaded', pf.mb.toFixed(1) + 'MB 已备好');
     }
   }
 
   /* 3. 构建 */
-  say('build', dic === DICT_REMOTE ? '快源' : '同域');
+  say('build', dic === DICT_REMOTE ? '快源（已缓存）' : '站内词典');
   try{
     tokenizer = await buildWith(dic);
   }catch(e){
     if(dic === DICT_LOCAL) throw e;
-    say('rebuild', '快源构建失败，换同域重试');
+    say('rebuild', '快源构建失败，换站内重试');
     tokenizer = await buildWith(DICT_LOCAL);
   }
   say('built');

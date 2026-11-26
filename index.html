@@ -329,18 +329,21 @@ const pendingTokens = new Map();
 
 function startDictWorker(){
   if(workerReady) return workerReady;
-  dictWorker = new Worker('./dict-worker.js');
+  /* 带版本参数：Service Worker 是缓存优先的，URL 不变就会一直吐旧版脚本，
+     导致看起来「Worker 什么都不做」 */
+  dictWorker = new Worker('./dict-worker.js?v=12');
   workerReady = new Promise((res, rej)=>{
     let settled = false;
     let lastStep = '启动';
     let lastAt = Date.now();
-    /* 看门狗：Worker 静默挂起时不会有任何 onerror，只能靠「多久没进展」判断 */
+    /* 看门狗：Worker 静默挂起时不会有任何 onerror，只能靠「多久没进展」判断。
+       下载阶段每个分片都会上报，所以 75 秒没动静才是真卡住 */
     const hb = setInterval(()=>{
       if(settled){ clearInterval(hb); return; }
-      if(Date.now() - lastAt > 45000){
+      if(Date.now() - lastAt > 75000){
         clearInterval(hb);
         settled = true;
-        console.warn('[词典] 45 秒无进展，判定 Worker 卡死 @ ' + lastStep);
+        console.warn('[词典] 75 秒无进展，判定 Worker 卡死 @ ' + lastStep);
         rej(new Error('WORKER_STALL @ ' + lastStep));
       }
     }, 3000);
@@ -398,7 +401,10 @@ function workerTokenize(text){
 
 /* ---------- 主线程兜底 ----------
    Worker 万一不可用（老浏览器 / 被策略拦），退回主线程构建。
-   代价是会短暂卡住界面，但保证一定能出注音。 */
+   代价是会短暂卡住界面，但保证一定能出注音。
+   词典同样优先取快源——Worker 那轮通常已经把它下进 HTTP 缓存。 */
+const DICT_REMOTE = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
+const DICT_LOCAL  = './dict/';
 let mainTok = null;
 let useMainTok = false;
 let dictReady = false;
@@ -413,9 +419,15 @@ function loadScript(src){
 async function buildOnMainThread(){
   if(mainTok) return mainTok;
   if(!window.kuromoji) await loadScript('./kuromoji.js');
-  mainTok = await new Promise((res, rej)=>{
-    window.kuromoji.builder({ dicPath: './dict/' }).build((err, t)=> err ? rej(err) : res(t));
+  const build = p => new Promise((res, rej)=>{
+    window.kuromoji.builder({ dicPath: p }).build((err, t)=> err ? rej(err) : res(t));
   });
+  try{
+    mainTok = await build(DICT_REMOTE);
+  }catch(e){
+    console.warn('[词典] 快源构建失败，改用站内词典: ' + ((e && e.message) || e));
+    mainTok = await build(DICT_LOCAL);
+  }
   return mainTok;
 }
 
