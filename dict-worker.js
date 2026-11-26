@@ -2,11 +2,11 @@
    kuromoji 构建 17MB 词典是同步 CPU 密集操作，留在主线程会让浏览器
    弹出「此页面没有响应」——这不是网络慢，是主线程被占死。
 
-   每一步都 postMessage 上报。尤其是下载阶段：17MB 在慢网要一两分钟，
-   不报进度主线程就分不清「在下载」和「卡死了」。 */
+   ⚠️ dicPath 必须是相对路径 ./dict/，不能写成 https://...
+   kuromoji 内部用 path.join 拼接（kuromoji.js:8197），会把 "https://" 压成 "https:/"，
+   浏览器随后按相对路径解析，请求全变成 404。快源由 Service Worker 在 ./dict/ 这层代理。 */
 
-const DICT_REMOTE = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
-const DICT_LOCAL  = './dict/';
+const DICT_PATH = './dict/';
 
 /* kuromoji 要的 12 个词典分片 */
 const FILES = [
@@ -26,8 +26,8 @@ function buildWith(dicPath){
 
 /* 先把 12 个分片自己下载一遍：
    1. 能报 MB 进度，主线程的看门狗靠它判断「还在动」
-   2. 读完后这些响应进了浏览器 HTTP 缓存（jsdelivr 是 max-age=604800），
-      kuromoji 随后用 XHR 请求同一 URL 会直接命中缓存，构建阶段从几十秒降到几秒 */
+   2. 请求经 Service Worker 代理到快源并写入 Cache Storage，
+      kuromoji 随后用 XHR 请求同一 URL 直接命中缓存，构建阶段从几十秒降到几秒 */
 async function preload(base){
   let done = 0, bytes = 0, failed = 0;
   const CONC = 4;
@@ -57,39 +57,11 @@ async function init(){
   importScripts('./kuromoji.js');
   say('imported', 'kuromoji 已就绪');
 
-  /* 1. 探活快源 */
-  let dic = DICT_LOCAL;
-  try{
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 2500);
-    const r = await fetch(DICT_REMOTE + 'unk_char.dat.gz', { signal: ctl.signal });
-    clearTimeout(timer);
-    if(r && r.ok) dic = DICT_REMOTE;
-    say('probe', '快源 HTTP ' + (r && r.status));
-  }catch(e){
-    say('probe', '快源不通，用站内词典');
-  }
+  const pf = await preload(DICT_PATH);
+  if(pf.done === 0) throw new Error('词典分片一个都没取到，请检查网络后刷新');
 
-  /* 2. 快源可用就先并发下载，顺带把 HTTP 缓存预热 */
-  if(dic === DICT_REMOTE){
-    const pf = await preload(DICT_REMOTE);
-    if(pf.failed > 0){
-      say('downgrade', pf.done + ' 个成功 / ' + pf.failed + ' 个失败，改用站内词典');
-      dic = DICT_LOCAL;
-    }else{
-      say('preloaded', pf.mb.toFixed(1) + 'MB 已备好');
-    }
-  }
-
-  /* 3. 构建 */
-  say('build', dic === DICT_REMOTE ? '快源（已缓存）' : '站内词典');
-  try{
-    tokenizer = await buildWith(dic);
-  }catch(e){
-    if(dic === DICT_LOCAL) throw e;
-    say('rebuild', '快源构建失败，换站内重试');
-    tokenizer = await buildWith(DICT_LOCAL);
-  }
+  say('build', pf.mb.toFixed(1) + 'MB，开始构建');
+  tokenizer = await buildWith(DICT_PATH);
   say('built');
 }
 

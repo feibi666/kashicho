@@ -331,7 +331,7 @@ function startDictWorker(){
   if(workerReady) return workerReady;
   /* 带版本参数：Service Worker 是缓存优先的，URL 不变就会一直吐旧版脚本，
      导致看起来「Worker 什么都不做」 */
-  dictWorker = new Worker('./dict-worker.js?v=12');
+  dictWorker = new Worker('./dict-worker.js?v=13');
   workerReady = new Promise((res, rej)=>{
     let settled = false;
     let lastStep = '启动';
@@ -402,9 +402,9 @@ function workerTokenize(text){
 /* ---------- 主线程兜底 ----------
    Worker 万一不可用（老浏览器 / 被策略拦），退回主线程构建。
    代价是会短暂卡住界面，但保证一定能出注音。
-   词典同样优先取快源——Worker 那轮通常已经把它下进 HTTP 缓存。 */
-const DICT_REMOTE = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
-const DICT_LOCAL  = './dict/';
+   词典路径必须是相对路径：kuromoji 用 path.join 拼地址，绝对 URL 会被压成 https:/ 而 404。
+   快源由 Service Worker 在 ./dict/ 这层代理。 */
+const DICT_PATH = './dict/';
 let mainTok = null;
 let useMainTok = false;
 let dictReady = false;
@@ -419,15 +419,9 @@ function loadScript(src){
 async function buildOnMainThread(){
   if(mainTok) return mainTok;
   if(!window.kuromoji) await loadScript('./kuromoji.js');
-  const build = p => new Promise((res, rej)=>{
-    window.kuromoji.builder({ dicPath: p }).build((err, t)=> err ? rej(err) : res(t));
+  mainTok = await new Promise((res, rej)=>{
+    window.kuromoji.builder({ dicPath: DICT_PATH }).build((err, t)=> err ? rej(err) : res(t));
   });
-  try{
-    mainTok = await build(DICT_REMOTE);
-  }catch(e){
-    console.warn('[词典] 快源构建失败，改用站内词典: ' + ((e && e.message) || e));
-    mainTok = await build(DICT_LOCAL);
-  }
   return mainTok;
 }
 

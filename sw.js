@@ -1,6 +1,10 @@
-const SHELL = 'kashicho-shell-v12';
-const DICT = 'kashicho-dict-v3';
+const SHELL = 'kashicho-shell-v13';
+const DICT = 'kashicho-dict-v4';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './kuromoji.js', './dict-worker.js'];
+
+/* 词典快源。kuromoji 内部用 path.join 拼地址，会把 https:// 压成 https:/，
+   所以它自己不能直接用绝对 URL——只能请求同源的 ./dict/，由这里代理出去。 */
+const DICT_CDN = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -27,21 +31,28 @@ self.addEventListener('fetch', (e) => {
   let url;
   try { url = new URL(req.url); } catch (err) { return; }
 
-  // 同域的分词词典（./dict/*.dat.gz）：纯缓存优先，词典不会变，下完就长期复用
-  // 跨域的那份（jsdelivr）刻意不拦：它自带 max-age=604800，浏览器 HTTP 缓存足够，
-  // 多一层 SW 转发只会增加「请求挂住」的风险
-  if (url.origin === location.origin && /\.dat\.gz$/.test(url.pathname)) {
+  /* 分词词典：同源 URL 进来，实际内容优先从 jsdelivr 取（快），取不到才回落到
+     站点自带的同源副本（慢但一定在）。缓存键用同源 URL，所以只下一次。
+     注意 put 必须 await：页面预取完立刻开始构建，缓存没写好就会重复下载 17MB。 */
+  if (url.origin === location.origin && /\/dict\/[^/]*\.dat\.gz$/.test(url.pathname)) {
     e.respondWith((async () => {
       const c = await caches.open(DICT);
       const hit = await c.match(req);
       if (hit) return hit;
-      try {
-        const res = await fetch(req);
-        if (res && res.ok) c.put(req, res.clone());
-        return res;
-      } catch (err) {
-        return hit || Response.error();
-      }
+      const name = url.pathname.split('/').pop();
+      try{
+        const r = await fetch(DICT_CDN + name);
+        if (r && r.ok){
+          await c.put(req, r.clone()).catch(() => {});
+          return r;
+        }
+      }catch (err) {}
+      try{
+        const r2 = await fetch(req);
+        if (r2 && r2.ok) await c.put(req, r2.clone()).catch(() => {});
+        return r2;
+      }catch (err) {}
+      return Response.error();
     })());
     return;
   }
