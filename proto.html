@@ -334,7 +334,7 @@ input[type=text]::placeholder{color:var(--faint)}
     <div class="row">
       <span class="sp"></span>
       <button class="btn" id="ntCancel">取消</button>
-      <button class="btn primary" id="ntGo">取时间轴</button>
+      <button class="btn primary" id="ntGo">取时间轴与译文</button>
     </div>
   </div>
 </div>
@@ -1894,40 +1894,41 @@ $('#btnNet').onclick = () => {
 };
 $('#ntCancel').onclick = () => $('#ntSheet').classList.add('hidden');
 
-/* ---------- 取网易云时间轴 + 译文 ----------
-   时间轴走 /api/song/media：认 callback，任何网络下都稳。
-   译文只在 /api/song/lyric 里，可这个接口既不返 CORS 头、也不认 callback，
-   静态页直接读不到，只能过一层中转。中转只转发「歌曲 id」这条公开信息。
-   默认的公共中转不稳，想稳就把 NET_RELAY 换成自己部署的 Worker（见 relay-worker.js）。 */
-const NET_RELAY = 'https://api.allorigins.win/raw?url=';
-const NET_RELAY_ALT = '';
-const netLyricUrl = id => 'https://music.163.com/api/song/lyric?id=' + id + '&lv=-1&kv=-1&tv=-1';
+/* ---------- 歌词来源 ----------
+   网易云官方接口（/api/song/media 只有原文、/api/song/lyric 才带译文）既不返 CORS 头、
+   也不认 callback，纯静态页读不到译文——这条路走不通，公共中转也不稳。
+   改走一个公开的网易云镜像 API：直接返 {lyric, tlyric}，带 Access-Control-Allow-Origin:*，
+   国内可直连，不用部署任何东西。镜像不通时退回官方 JSONP，那条只有时间轴。 */
+const MIRROR_API = 'https://music-api.gdstudio.xyz/api.php';
 
-/* 译文尽力而为：直连 → 中转。拿不到就返回空，绝不拖累时间轴 */
-async function fetchNetTl(id){
-  const target = netLyricUrl(id);
-  const grab = async (url, ms) => {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), ms);
-    try{
-      const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
-      if(!r.ok) return null;
-      const txt = await r.text();
-      const i = txt.indexOf('{');
-      if(i < 0) return null;
-      const d = JSON.parse(txt.slice(i));
-      const raw = (d && d.tlyric && d.tlyric.lyric) || '';
-      return parseNetLrc(raw);
-    }catch(e){ return null; }
-    finally{ clearTimeout(timer); }
-  };
-  const direct = await grab(target, 3000);
-  if(direct) return { tl: direct, why: direct.length ? '' : 'none' };
-  for(const base of [NET_RELAY, NET_RELAY_ALT].filter(Boolean)){
-    const via = await grab(base + encodeURIComponent(target), 7000);
-    if(via) return { tl: via, why: via.length ? '' : 'none' };
+async function fetchJson(url, ms){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try{
+    const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+  finally{ clearTimeout(timer); }
+}
+
+/* 一次拿齐时间轴 + 译文。why: mirror 镜像 / official 官方只给轴 / fail
+   镜像偶发抽风，重试一次；两次都不行才退回官方 JSONP */
+async function fetchNetAll(id){
+  const key = encodeURIComponent(id);
+  const url = MIRROR_API + '?types=lyric&source=netease&id=' + key;
+  for(let i = 0; i < 2; i++){
+    const m = await fetchJson(url, 9000);
+    if(m && (m.lyric || m.tlyric)){
+      const lrc = parseNetLrc(m.lyric || '');
+      if(lrc.length) return { lrc: lrc, tl: parseNetLrc(m.tlyric || ''), raw: m.lyric || '', why: 'mirror' };
+    }
+    if(i === 0) await new Promise(r => setTimeout(r, 700));
   }
-  return { tl: [], why: 'fail' };
+  const d = await jsonp('https://music.163.com/api/song/media?id=' + key).catch(() => null);
+  const raw = (d && d.lyric) || '';
+  const lrc = parseNetLrc(raw);
+  return { lrc: lrc, tl: [], raw: raw, why: lrc.length ? 'official' : 'fail' };
 }
 
 /* 译文和原文时间戳一致，按时间取最近的一条，超过 0.6 秒就当没有 */
@@ -1955,59 +1956,43 @@ function fillZh(entries, tl, times){
   return n;
 }
 
-/* 拿到时间轴后并进当前这首歌：有已贴歌词就按文本对齐，没有就直接用接口的原文。
-   译文另走一趟，不挡着用——这一步只负责时间轴。 */
+/* 拿到后并进当前这首歌：已有歌词就按文本对齐时间轴并补译文，没有就直接用接口的原文。
+   时间轴和译文是同一次请求拿回来的，一次到位，不用分两趟。 */
 async function applyNet(id){
-  const d = await jsonp('https://music.163.com/api/song/media?id=' + id);
-  const raw = (d && d.lyric) || '';
-  const lrc = parseNetLrc(raw);
-  if(!lrc.length) return { ok: false, msg: '这首在网易云没有带时间轴的歌词' };
+  const got = await fetchNetAll(id);
+  if(!got.lrc.length) return { ok: false, msg: '这首在网易云没有带时间轴的歌词' };
+  const tl = got.tl || [];
+  const noTl = tl.length ? ''
+    : (got.why === 'mirror' ? '（这首在网易云没有译文）' : '（只取到时间轴，译文取不到）');
 
-  let msg;
   if(cur.rec && cur.rec.entries && cur.rec.entries.length){
-    const r = alignTimes(cur.rec.entries, lrc);
+    const r = alignTimes(cur.rec.entries, got.lrc);
     const n = cur.rec.entries.length;
     /* 一行都没对上，多半不是同一版歌词，宁可不动也别把时间轴搞乱 */
     if(!r.hit) return { ok: false, msg: '时间轴和这份歌词一行都没对上，可能取的不是同一版' };
-    cur.rec.net = raw;
-    cur.rec.netTl = [];
+    cur.rec.net = got.raw;
+    cur.rec.netTl = tl;
     cur.rec.autoT = r.times;
     cur.rec.manual = cur.rec.manual || {};
-    msg = '时间轴对上 ' + r.hit + '/' + n + ' 句';
+    const filled = fillZh(cur.rec.entries, tl, r.times);
+    let msg = '时间轴对上 ' + r.hit + '/' + n + ' 句';
+    if(filled) msg += '，补了 ' + filled + ' 句译文';
+    else msg += noTl;
     if(r.hit < n * 0.5) msg += '（对上的少，可能不是同一版歌词）';
-  }else{
-    cur.rec = {
-      entries: lrc.map(l => ({ t: l.t, jp: l.txt, zh: '' })),
-      hasTs: true, manual: {}, dict: '', net: raw, netTl: [], autoT: []
-    };
-    msg = '取到 ' + lrc.length + ' 句时间轴';
+    await persistRec();
+    await buildLines();
+    return { ok: true, msg: msg };
   }
+
+  const entries = got.lrc.map(l => ({ t: l.t, jp: l.txt, zh: '' }));
+  const m = fillZh(entries, tl);
+  cur.rec = {
+    entries: entries,
+    hasTs: true, manual: {}, dict: '', net: got.raw, netTl: tl, autoT: []
+  };
   await persistRec();
   await buildLines();
-
-  /* 译文随后补，补不上也不影响已经能用的时间轴 */
-  const owner = cur;
-  fillTranslation(id, owner, raw);
-  return { ok: true, msg: msg + '，正在取译文…' };
-}
-
-/* 译文单独一趟：拿到再补一次，离开这首就不写回去 */
-async function fillTranslation(id, owner, raw){
-  const got = await fetchNetTl(id).catch(() => ({ tl: [], why: 'fail' }));
-  if(!cur || cur !== owner || !cur.rec) return;
-  const tl = got.tl || [];
-  if(!tl.length){
-    toast(got.why === 'none' ? '这首在网易云没有译文，只取了时间轴'
-      : '译文取不到（接口挡跨域），只取了时间轴', 3000);
-    return;
-  }
-  cur.rec.net = raw || cur.rec.net;
-  cur.rec.netTl = tl;
-  const times = cur.rec.autoT && cur.rec.autoT.some(x => x != null) ? cur.rec.autoT : null;
-  const n = fillZh(cur.rec.entries, tl, times);
-  await persistRec();
-  await buildLines();
-  toast(n ? '补上 ' + n + ' 句译文' : '译文有了，但这首没有空着的句子', 2800);
+  return { ok: true, msg: '取到 ' + got.lrc.length + ' 句时间轴' + (m ? '、' + m + ' 句译文' : noTl) };
 }
 
 $('#ntGo').onclick = async () => {
