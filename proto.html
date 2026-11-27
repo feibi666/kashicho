@@ -199,6 +199,9 @@ input[type=text]::placeholder{color:var(--faint)}
 .rdrow .rda{flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rdrow input{flex:1;min-width:0;height:34px;font-size:13px}
 .rdrow button{flex:none;font-size:12px;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--fg)}
+.rdrow .rdopt{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);padding:1px 0 0 2px;user-select:none}
+/* 上面那条 .rdrow input 会把复选框也拉成 34px 高，这里单独压回来 */
+.rdrow .rdopt input[type=checkbox]{flex:none;width:14px;height:14px;margin:0;accent-color:var(--accent)}
 /* 人工改过的读音，加下划线标记，一眼看出哪些不是自动的 */
 .wchip .wr.man{text-decoration:underline;text-underline-offset:2px}
 </style>
@@ -294,6 +297,7 @@ input[type=text]::placeholder{color:var(--faint)}
         <button id="rdSave">存</button>
         <button id="rdDel">删</button>
       </div>
+      <label class="rdopt"><input type="checkbox" id="rdAll"><span>同时套用到其他歌</span></label>
     </div>
     <div class="hint" id="wsHint">点一个词 = 复制它（只有原文，不带假名）。假名给你看，不进剪贴板。</div>
     <div class="row">
@@ -421,7 +425,9 @@ const DB = (()=>{
   return {
     get: k => withTimeout(tx('readonly', st => st.get(k)), 2500, undefined),
     set: (k,v) => withTimeout(tx('readwrite', st => st.put(v,k)), 4000, undefined),
-    del: k => withTimeout(tx('readwrite', st => st.delete(k)), 4000, undefined)
+    del: k => withTimeout(tx('readwrite', st => st.delete(k)), 4000, undefined),
+    /* 列全部键：「同时套用到其他歌」要遍历所有 lyr: 记录 */
+    keys: () => withTimeout(tx('readonly', st => st.getAllKeys()), 2500, [])
   };
 })();
 
@@ -652,6 +658,32 @@ async function setRead(surf, v){
   return await persistRec();
 }
 
+/* 勾「同时套用到其他歌」：把这个词形和读音复制进其它已经有歌词的歌。
+   只填空档 —— 别人已经标过、且读音不同的那几首不覆盖，
+   多音词正是靠各自标注区分，硬盖会把那边的心血毁掉。
+   另外只写到歌词里确实出现这个词的歌，免得每首都塞一堆用不上的条目 */
+async function applyReadAll(surf, v){
+  let wrote = 0, kept = 0;
+  try{
+    const keys = (await DB.keys().catch(() => [])).filter(k => typeof k === 'string' && k.indexOf('lyr:') === 0);
+    const others = keys.filter(k => !cur || k !== 'lyr:' + cur.name);
+    const recs = await Promise.all(others.map(k => DB.get(k).catch(() => null)));
+    await Promise.all(others.map(async (k, i) => {
+      const rec = recs[i];
+      if(!rec || typeof rec !== 'object') return;
+      if(!Array.isArray(rec.entries) || !rec.entries.some(e => (e && e.jp || '').indexOf(surf) >= 0)) return;
+      const m = rec.read || {};
+      if(m[surf] === v) return;
+      if(m[surf]){ kept++; return; }
+      m[surf] = v;
+      rec.read = m;
+      const ok = await DB.set(k, rec).catch(() => undefined);
+      if(ok !== undefined) wrote++;
+    }));
+  }catch(e){}
+  return { wrote, kept };
+}
+
 /* 旧版本把注音按词形存成一张全局表，多音词会串味，已作废。
    原数据不删，改名留档，必要时可在控制台 DB.get('read_legacy') 里翻 */
 async function retireLegacyRead(){
@@ -766,6 +798,9 @@ async function openWords(i){
   const ln = lines[i];
   if(!ln) return;
   wsIdx = i; wsPick = '';
+  /* 「同时套用到其他歌」每次打开都回到不勾：套用是会改动别的歌的操作，不该默认带上 */
+  const all = $('#rdAll');
+  if(all) all.checked = false;
   $('#wsText').textContent = ln.jp || '';
   $('#wordSheet').classList.remove('hidden');
   setWsMode('copy');
@@ -778,7 +813,7 @@ function setWsMode(m){
   $('#wsHint').textContent = m === 'copy'
     ? '点一个词 = 复制它（只有原文，不带假名）。假名给你看，不进剪贴板。'
     : m === 'read'
-      ? '点一个词 → 在下面填假名。读音只存给「这首歌」，换首歌唱法不同可以另填，互不影响。'
+      ? '点一个词 → 在下面填假名。默认只存给「这首歌」，换首歌唱法不同可以另填；勾了下面那行才顺带写到别的歌。'
       : '点一个词 → 在下面填中文释义。释义按词形存，所有歌通用。';
   $('#glRow').classList.toggle('hidden', m !== 'gloss');
   $('#rdRow').classList.toggle('hidden', m !== 'read');
@@ -2224,8 +2259,15 @@ async function runDemo(){
     const raw = $('#rdInput').value.trim();
     const v = cleanKana(raw);
     if(raw && !v){ toast('这里只能填假名，比如 さく'); return; }
+    const all = $('#rdAll').checked && !!v;
     await setRead(wsPick, v);
-    toast(v ? ('本歌已注音 ' + wsPick + ' → ' + v) : ('已恢复自动注音 ' + wsPick));
+    let msg = v ? ('本歌已注音 ' + wsPick + ' → ' + v) : ('已恢复自动注音 ' + wsPick);
+    if(all){
+      const r = await applyReadAll(wsPick, v);
+      msg += r.wrote ? ('，套用到另外 ' + r.wrote + ' 首') : '';
+      if(r.kept) msg += '（' + r.kept + ' 首已标过别的读音，没动）';
+    }
+    toast(msg);
     $('#rdInput').value = v;
     await refreshGloss();
   };

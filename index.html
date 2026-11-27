@@ -43,30 +43,37 @@ button{font-family:inherit;background:none;border:0;color:inherit;padding:0;curs
 .emptybtn{margin-top:14px;font-size:13px;padding:7px 16px;border:1px solid var(--accent);border-radius:999px;color:var(--accent);background:var(--accent-soft)}
 
 /* ---------- 播放页 ---------- */
-#player header{display:flex;align-items:center;gap:10px;padding:calc(var(--safe-t) + 8px) 14px 4px}
-#player header .back{flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted);margin-left:-6px}
-#player header .meta{flex:1;min-width:0}
-#player header .tt{font-size:14px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#player header .st{font-size:11px;color:var(--muted);margin-top:1px;font-variant-numeric:tabular-nums}
-#player header .more{flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--muted)}
+/* ---------- 播放页：歌词在上，控制区整体沉底 ---------- */
+.dock{flex:none;background:var(--bg);border-top:1px solid var(--line);box-shadow:0 -6px 14px rgba(27,26,23,.045)}
+.npinfo{display:flex;align-items:baseline;gap:10px;padding:8px 16px 0;min-width:0}
+.npinfo .tt{flex:1;min-width:0;font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npinfo .st{flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 
-.ctrl{display:flex;align-items:center;gap:6px;padding:2px 14px 6px;position:relative;z-index:8}
-.ctrl .sp{flex:1;min-width:2px}
+.ctrl{display:flex;align-items:center;justify-content:center;gap:26px;padding:0 14px 2px;position:relative;z-index:8}
+.ctrl .back{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:23px;color:var(--muted)}
 .navbtn{flex:none;width:26px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--fg)}
 .navbtn:active{opacity:.45}
 .navbtn svg{display:block}
-.play{flex:none;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:var(--surf)}
-.play::after{content:"";border-left:12px solid var(--fg);border-top:8px solid transparent;border-bottom:8px solid transparent;margin-left:3px}
+.play{flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:var(--surf)}
+.play::after{content:"";border-left:13px solid var(--fg);border-top:9px solid transparent;border-bottom:9px solid transparent;margin-left:3px}
 .play.on::after{content:"";border:0;width:11px;height:15px;margin-left:0;border-left:4px solid var(--fg);border-right:4px solid var(--fg);box-sizing:border-box}
+
+/* 工具行：音 / 词 / 轴 / 译 + 常用开关，一行放不下就横滑 */
+.tools{display:flex;align-items:center;gap:6px;padding:2px 12px calc(var(--safe-b) + 8px);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tools::-webkit-scrollbar{display:none}
+.tools .sp{flex:1;min-width:4px}
+.tbtn{flex:none;width:30px;height:26px;font-size:12px;line-height:1;color:var(--muted);border:1px solid transparent;border-radius:7px;display:flex;align-items:center;justify-content:center}
+.tbtn.act{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 .pill{font-size:11px;padding:5px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);white-space:nowrap;flex:none}
 .pill.act{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .modewrap{position:relative;flex:none}
 .modewrap .car{font-size:9px;margin-left:3px;opacity:.7}
-.modemenu{position:absolute;top:calc(100% + 5px);right:0;min-width:108px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:4px;box-shadow:0 6px 20px rgba(0,0,0,.13);z-index:30}
+/* 菜单挂在 #player 上而不是按钮里：工具行有 overflow-x，绝对定位的子元素会被裁掉 */
+.modemenu{position:absolute;bottom:calc(var(--safe-b) + 44px);right:12px;min-width:112px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:4px;box-shadow:0 6px 20px rgba(0,0,0,.13);z-index:30}
 .modemenu button{display:block;width:100%;text-align:left;font-size:12px;padding:8px 10px;border-radius:6px;color:var(--fg);white-space:nowrap}
 .modemenu button.on{color:var(--accent);background:var(--accent-soft)}
 
-.seekwrap{padding:0 16px 8px;display:flex;align-items:center;gap:10px}
+.seekwrap{padding:2px 12px 0;display:flex;align-items:center;gap:8px}
 .qbtn{flex:none;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;font-variant-numeric:tabular-nums;white-space:nowrap}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;margin:0}
 input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:linear-gradient(to right,var(--accent) var(--p,0%),var(--line) var(--p,0%))}
@@ -83,11 +90,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 #tapBtn:active{transform:scale(.99);opacity:.9}
 body.timing .fab{display:none}
 
-.lyrics{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 0 calc(var(--safe-b) + 96px);scroll-behavior:smooth}
+.lyrics{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(var(--safe-t) + 8px) 0 20px;scroll-behavior:smooth}
 .line{display:flex;gap:4px;padding:9px 14px 9px 12px;position:relative}
-.line .tk{flex:none;width:13px;padding-top:calc(.6em + 2px);opacity:0;transition:opacity .12s}
-.line .tk::before{content:"";display:block;width:0;height:0;border-left:6px solid var(--faint);border-top:4px solid transparent;border-bottom:4px solid transparent}
-.line:hover .tk,.line.cur .tk{opacity:1}
+/* 行首播放键常驻可点，点了从这句播 */
+.line .tk{flex:none;width:16px;height:16px;margin-top:calc(.42em);padding:0;border:0;background:none;display:flex;align-items:center;justify-content:center;opacity:.22;transition:opacity .12s,transform .12s}
+.line .tk::before{content:"";width:0;height:0;border-left:7px solid var(--faint);border-top:5px solid transparent;border-bottom:5px solid transparent}
+.line.cur .tk{opacity:.6}
+.line .tk:active{opacity:1;transform:scale(.88)}
+body.timing .line .tk{visibility:hidden}
 .line .body{flex:1;min-width:0}
 .line .jp{font-size:17px;line-height:2.05;word-break:break-word}
 .line .tr{display:grid;grid-template-rows:0fr;transition:grid-template-rows .2s ease}
@@ -99,10 +109,22 @@ body.timing .fab{display:none}
 .line.pending{background:rgba(24,95,165,.06)}
 .line.pending::after{content:"";position:absolute;left:12px;right:14px;bottom:3px;height:2px;background:repeating-linear-gradient(90deg,var(--accent) 0 5px,transparent 5px 10px);opacity:.5}
 .line ruby{ruby-align:center}
-.line ruby rt{font-size:.52em;color:var(--accent);letter-spacing:0;font-weight:400}
+.line ruby rt{font-size:.52em;color:var(--accent);letter-spacing:0;font-weight:400;user-select:none;-webkit-user-select:none;pointer-events:none}
+/* 生词释义：放在词下方，注音占上方，两边各一层，互不打架；
+   不占正文宽度、不进剪贴板 */
+.line .hg{position:relative}
+.line .hg::before{
+  content:attr(data-g);position:absolute;left:50%;transform:translateX(-50%);
+  top:calc(100% + .16em);
+  font-size:.46em;color:#B4643C;line-height:1;letter-spacing:0;white-space:nowrap;
+  pointer-events:none;user-select:none;-webkit-user-select:none;
+}
+.line.hasgl .jp{line-height:2.62}
+body.nogloss .line .hg::before{display:none}
+body.nogloss .line.hasgl .jp{line-height:2.05}
 body.timing .line:active{background:var(--accent-soft)}
 
-.fab{position:absolute;right:14px;bottom:calc(var(--safe-b) + 18px);font-size:11px;padding:8px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);z-index:5}
+.fab{position:absolute;right:14px;bottom:calc(var(--safe-b) + 148px);font-size:11px;padding:8px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);z-index:5;box-shadow:0 3px 12px rgba(27,26,23,.08)}
 
 /* ---------- 歌词录入 ---------- */
 .sheet{position:absolute;inset:0;background:rgba(20,18,15,.34);display:flex;align-items:flex-end;z-index:30}
@@ -142,6 +164,37 @@ input[type=text]::placeholder{color:var(--faint)}
 @keyframes sp{to{transform:rotate(360deg)}}
 #toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 90px);transform:translateX(-50%);background:rgba(27,26,23,.88);color:#fff;font-size:12px;line-height:1.5;padding:8px 14px;border-radius:8px;max-width:80%;text-align:center;z-index:70;opacity:0;transition:opacity .2s;pointer-events:none}
 #toast.on{opacity:1}
+
+/* ---------- 查词浮层 ---------- */
+.wsline{font-size:15px;line-height:1.9;color:var(--fg);border-left:2px solid var(--line);padding-left:9px}
+.wswords{display:flex;flex-wrap:wrap;gap:7px;max-height:38vh;overflow-y:auto;padding:2px 0 4px}
+.wchip{display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;min-width:44px}
+.wchip .wt{font-size:15px;line-height:1.25;color:var(--fg)}
+.wchip .wr{font-size:10px;line-height:1.2;color:var(--accent);min-height:12px}
+.wchip:active{background:var(--accent-soft);border-color:var(--accent)}
+.wshint{font-size:12px;color:var(--muted);padding:6px 0}
+.wstabs{display:flex;gap:6px;padding:0 0 2px}
+.wstabs button{font-size:12px;padding:5px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:#fff}
+.wstabs button.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.wchip.sel{border-color:#B4643C;background:#FBF1EC}
+.wchip .wd{font-size:9px;color:#B4643C;line-height:1;min-height:9px}
+.glrow{display:flex;align-items:center;gap:7px;padding:7px;border:1px solid #E6D5CB;background:#FBF6F2;border-radius:10px}
+.glrow .glw{flex:none;font-size:14px;color:#B4643C;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.glrow input{flex:1;min-width:0;height:34px;font-size:13px}
+.glrow button{flex:none;font-size:12px;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--fg)}
+/* 注音行：蓝色系，和赭橙的释义行一眼分得开。
+   窄屏放不下一行（词 + 自动读音 + 输入框 + 两个按钮），所以拆成上下两行 */
+.rdrow{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid #C9DCEE;background:#F3F8FD;border-radius:10px}
+.rdline{display:flex;align-items:center;gap:7px;min-width:0}
+.rdrow .rdw{flex:none;font-size:14px;color:var(--accent);max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rdrow .rda{flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rdrow input{flex:1;min-width:0;height:34px;font-size:13px}
+.rdrow button{flex:none;font-size:12px;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--fg)}
+.rdrow .rdopt{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);padding:1px 0 0 2px;user-select:none}
+/* 上面那条 .rdrow input 会把复选框也拉成 34px 高，这里单独压回来 */
+.rdrow .rdopt input[type=checkbox]{flex:none;width:14px;height:14px;margin:0;accent-color:var(--accent)}
+/* 人工改过的读音，加下划线标记，一眼看出哪些不是自动的 */
+.wchip .wr.man{text-decoration:underline;text-underline-offset:2px}
 </style>
 </head>
 <body>
@@ -150,6 +203,7 @@ input[type=text]::placeholder{color:var(--faint)}
 <div id="list" class="page">
   <header><h1>歌詞帳<span>假名注音 · 逐句译文</span></h1></header>
   <button class="pickbtn" id="pickDir">选择音乐文件夹</button>
+  <button class="pickbtn hidden" id="tempPick">临时选几首歌（本机不记住）</button>
   <div class="songlist" id="songs">
     <div class="empty">还没有歌曲。<br>点上面的按钮，把放歌的文件夹授权给它。</div>
   </div>
@@ -157,32 +211,8 @@ input[type=text]::placeholder{color:var(--faint)}
 
 <!-- ========== 播放 ========== -->
 <div id="player" class="page hidden">
-  <header>
-    <button class="back" id="back">‹</button>
-    <div class="meta"><div class="tt" id="pTitle">—</div><div class="st" id="pTime">0:00 / 0:00</div></div>
-    <button class="more" id="btnDic">音</button>
-    <button class="more" id="btnLyric">词</button>
-    <button class="more" id="btnNet">轴</button>
-  </header>
-  <div class="ctrl">
-    <button class="navbtn" id="btnPrev" aria-label="上一首"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M19 5.5v13L9.5 12z" fill="currentColor"/><rect x="5" y="5" width="2.3" height="14" rx="0.9" fill="currentColor"/></svg></button>
-    <button class="play" id="btnPlay"></button>
-    <button class="navbtn" id="btnNext" aria-label="下一首"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M5 5.5v13L14.5 12z" fill="currentColor"/><rect x="16.7" y="5" width="2.3" height="14" rx="0.9" fill="currentColor"/></svg></button>
-    <span class="sp"></span>
-    <button class="pill" id="btnRate">1×</button>
-    <button class="pill" id="btnLoop">单句</button>
-    <button class="pill" id="btnTiming">打点</button>
-    <div class="modewrap">
-      <button class="pill" id="btnMode">列表循环<span class="car">▾</span></button>
-      <div class="modemenu hidden" id="modeMenu">
-        <button data-m="list">列表循环</button>
-        <button data-m="one">单曲循环</button>
-        <button data-m="shuffle">随机播放</button>
-      </div>
-    </div>
-  </div>
-  <div class="seekwrap"><input type="range" id="seek" min="0" max="10000" value="0" step="1"><button class="qbtn hidden" id="qBtn">0/0</button></div>
   <div class="lyrics" id="lyrics"></div>
+
   <div id="tapPanel" class="hidden">
     <div class="tp"><span class="tpn" id="tapNum">1/1</span><span class="tpt" id="tapTxt"></span></div>
     <button id="tapBtn">这句开头</button>
@@ -195,7 +225,77 @@ input[type=text]::placeholder{color:var(--faint)}
       <button id="btnTimingDone">完成</button>
     </div>
   </div>
+
+  <div class="dock">
+    <div class="npinfo">
+      <div class="tt" id="pTitle">—</div>
+      <div class="st" id="pTime">0:00 / 0:00</div>
+    </div>
+    <div class="seekwrap"><input type="range" id="seek" min="0" max="10000" value="0" step="1"><button class="qbtn hidden" id="qBtn">0/0</button></div>
+    <div class="ctrl">
+      <button class="back" id="back" aria-label="返回歌单">‹</button>
+      <button class="navbtn" id="btnPrev" aria-label="上一首"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M19 5.5v13L9.5 12z" fill="currentColor"/><rect x="5" y="5" width="2.3" height="14" rx="0.9" fill="currentColor"/></svg></button>
+      <button class="play" id="btnPlay"></button>
+      <button class="navbtn" id="btnNext" aria-label="下一首"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M5 5.5v13L14.5 12z" fill="currentColor"/><rect x="16.7" y="5" width="2.3" height="14" rx="0.9" fill="currentColor"/></svg></button>
+    </div>
+    <div class="tools">
+      <button class="tbtn" id="btnTr">译</button>
+      <button class="tbtn" id="btnDic">音</button>
+      <button class="tbtn" id="btnLyric">词</button>
+      <button class="tbtn" id="btnNet">轴</button>
+      <span class="sp"></span>
+      <button class="pill" id="btnRate">1×</button>
+      <button class="pill" id="btnLoop">单句</button>
+      <button class="pill" id="btnTiming">打点</button>
+      <button class="pill" id="btnMode">循环<span class="car">▾</span></button>
+    </div>
+  </div>
+
+  <div class="modemenu hidden" id="modeMenu">
+    <button data-m="list">列表循环</button>
+    <button data-m="one">单曲循环</button>
+    <button data-m="shuffle">随机播放</button>
+  </div>
+
   <button class="fab hidden" id="fab">回到当前句</button>
+</div>
+
+<!-- ========== 查词 ========== -->
+<div class="sheet hidden" id="wordSheet">
+  <div class="inner">
+    <h2>查词 / 生词</h2>
+    <div class="wstabs" id="wsTabs">
+      <button data-t="copy" class="on">复制</button>
+      <button data-t="read">注音</button>
+      <button data-t="gloss">释义</button>
+    </div>
+    <div class="wsline" id="wsText"></div>
+    <div class="wswords" id="wsWords"></div>
+    <div class="glrow hidden" id="glRow">
+      <span class="glw" id="glWord"></span>
+      <input id="glInput" type="text" maxlength="24" placeholder="中文释义，如：开花">
+      <button id="glSave">存</button>
+      <button id="glDel">删</button>
+    </div>
+    <div class="rdrow hidden" id="rdRow">
+      <div class="rdline">
+        <span class="rdw" id="rdWord">选一个词</span>
+        <span class="rda" id="rdAuto"></span>
+      </div>
+      <div class="rdline">
+        <input id="rdInput" type="text" maxlength="24" placeholder="假名，如：さく">
+        <button id="rdSave">存</button>
+        <button id="rdDel">删</button>
+      </div>
+      <label class="rdopt"><input type="checkbox" id="rdAll"><span>同时套用到其他歌</span></label>
+    </div>
+    <div class="hint" id="wsHint">点一个词 = 复制它（只有原文，不带假名）。假名给你看，不进剪贴板。</div>
+    <div class="row">
+      <button class="btn" id="wsCopyLine">复制整句</button>
+      <span class="sp"></span>
+      <button class="btn primary" id="wsClose">关闭</button>
+    </div>
+  </div>
 </div>
 
 <!-- ========== 粘贴歌词 ========== -->
@@ -243,14 +343,14 @@ input[type=text]::placeholder{color:var(--faint)}
 
 <div class="sheet hidden" id="ntSheet">
   <div class="inner">
-    <h2>从网易云取时间轴</h2>
-    <div class="hint">在网易云里点「分享 → 复制链接」，把链接整段贴进来；链接里带 <code>id=数字</code> 就行，也可以直接填数字。</div>
+    <h2>从网易云取时间轴与译文</h2>
+    <div class="hint">在网易云里点「分享 → 复制链接」，把链接整段贴进来；链接里带 <code>id=数字</code> 就行，也可以直接填数字。<br>网易云上有这篇的译文就一起带过来，没有就只取时间轴。</div>
     <input type="text" id="ntInput" placeholder="https://music.163.com/song?id=1409311773" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div class="hint" id="ntStatus"></div>
     <div class="row">
       <span class="sp"></span>
       <button class="btn" id="ntCancel">取消</button>
-      <button class="btn primary" id="ntGo">取时间轴</button>
+      <button class="btn primary" id="ntGo">取时间轴与译文</button>
     </div>
   </div>
 </div>
@@ -267,7 +367,7 @@ const au = $('#au');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const KANA = /[\u3040-\u309F\u30A0-\u30FF]/;
 const KANJI = /[\u4E00-\u9FFF\u3005\u3006\u3400-\u4DBF]/;
-const AUDIO_EXT = /\.(mp3|flac|m4a|aac|ogg|oga|opus|wav|weba)$/i;
+const AUDIO_EXT = /\.(mp3|flac|m4a|aac|ogg|oga|opus|wav|weba|ncm)$/i;
 
 let toastTimer;
 function toast(msg, ms){
@@ -315,7 +415,9 @@ const DB = (()=>{
   return {
     get: k => withTimeout(tx('readonly', st => st.get(k)), 2500, undefined),
     set: (k,v) => withTimeout(tx('readwrite', st => st.put(v,k)), 4000, undefined),
-    del: k => withTimeout(tx('readwrite', st => st.delete(k)), 4000, undefined)
+    del: k => withTimeout(tx('readwrite', st => st.delete(k)), 4000, undefined),
+    /* 列全部键：「同时套用到其他歌」要遍历所有 lyr: 记录 */
+    keys: () => withTimeout(tx('readonly', st => st.getAllKeys()), 2500, [])
   };
 })();
 
@@ -521,10 +623,85 @@ function rubyWrap(surf, reading){
   return esc(pre) + '<ruby>' + esc(s) + '<rt>' + esc(rt) + '</rt></ruby>' + esc(suf);
 }
 
+/* ================= 生词释义 / 人工注音 ================= */
+/* 释义按「词形」全局存：{ "咲く": "开花" }，标一次别的歌也能用 */
+let GLOSS = {};
+async function loadGloss(){
+  const g = await DB.get('gloss').catch(()=>null);
+  GLOSS = (g && typeof g === 'object') ? g : {};
+}
+
+/* 人工注音跟着歌走：存在这首歌自己的歌词记录里 cur.rec.read = { 词形: 假名 }。
+   多音词在不同歌里读音不同（咲く 有的唱 さく、有的唱 えむ），按词形全局存会串味，
+   所以不共用、只归本歌。优先级高于分词器给的读音。 */
+function readOf(surf){
+  const m = cur && cur.rec && cur.rec.read;
+  const v = m && m[surf];
+  return (typeof v === 'string' && v.trim()) ? v.trim() : '';
+}
+/* 写/删都直接落到这首歌的记录上，返回是否写进存储 */
+async function setRead(surf, v){
+  if(!cur || !cur.rec) return false;
+  const m = cur.rec.read || (cur.rec.read = {});
+  if(v) m[surf] = v; else delete m[surf];
+  if(!Object.keys(m).length) delete cur.rec.read;
+  return await persistRec();
+}
+
+/* 勾「同时套用到其他歌」：把这个词形和读音复制进其它已经有歌词的歌。
+   只填空档 —— 别人已经标过、且读音不同的那几首不覆盖，
+   多音词正是靠各自标注区分，硬盖会把那边的心血毁掉。
+   另外只写到歌词里确实出现这个词的歌，免得每首都塞一堆用不上的条目 */
+async function applyReadAll(surf, v){
+  let wrote = 0, kept = 0;
+  try{
+    const keys = (await DB.keys().catch(() => [])).filter(k => typeof k === 'string' && k.indexOf('lyr:') === 0);
+    const others = keys.filter(k => !cur || k !== 'lyr:' + cur.name);
+    const recs = await Promise.all(others.map(k => DB.get(k).catch(() => null)));
+    await Promise.all(others.map(async (k, i) => {
+      const rec = recs[i];
+      if(!rec || typeof rec !== 'object') return;
+      if(!Array.isArray(rec.entries) || !rec.entries.some(e => (e && e.jp || '').indexOf(surf) >= 0)) return;
+      const m = rec.read || {};
+      if(m[surf] === v) return;
+      if(m[surf]){ kept++; return; }
+      m[surf] = v;
+      rec.read = m;
+      const ok = await DB.set(k, rec).catch(() => undefined);
+      if(ok !== undefined) wrote++;
+    }));
+  }catch(e){}
+  return { wrote, kept };
+}
+
+/* 旧版本把注音按词形存成一张全局表，多音词会串味，已作废。
+   原数据不删，改名留档，必要时可在控制台 DB.get('read_legacy') 里翻 */
+async function retireLegacyRead(){
+  try{
+    const old = await DB.get('read').catch(()=>null);
+    if(old && typeof old === 'object' && Object.keys(old).length){
+      await DB.set('read_legacy', old).catch(()=>{});
+      await DB.del('read').catch(()=>{});
+      setTimeout(() => toast('注音改为按歌保存了：旧的全局注音不再生效（原数据留档在 read_legacy），需要在这首歌里重标一次', 4200), 1200);
+    }
+  }catch(e){}
+}
+/* 有释义的词：假名照旧交给 ruby，释义另画一层浮在假名上方，
+   不再像早先那样把中文挂在词后面把整行撑宽 */
+function rubyWithGloss(surf, reading, gloss){
+  let rd = (!reading || reading === '*') ? '' : kata2hira(reading);
+  if(rd === surf) rd = '';
+  const inner = rd ? '<ruby>' + esc(surf) + '<rt>' + esc(rd) + '</rt></ruby>' : esc(surf);
+  return '<span class="hg" data-g="' + esc(gloss) + '">' + inner + '</span>';
+}
+
 function rubyFor(tk){
   const surf = tk.surface_form;
+  const g = GLOSS[surf];
+  const man = readOf(surf);
+  if(g) return rubyWithGloss(surf, man || tk.reading || tk.pronunciation, g);
   if(!KANJI.test(surf)) return esc(surf);
-  return rubyWrap(surf, tk.reading || tk.pronunciation);
+  return rubyWrap(surf, man || tk.reading || tk.pronunciation);
 }
 async function annotatePlain(text){
   if(!text) return '';
@@ -546,12 +723,152 @@ async function annotate(text){
   let out = '', last = 0, m;
   while((m = RUBY_PAREN.exec(text))){
     if(m.index > last) out += await annotatePlain(text.slice(last, m.index));
-    out += rubyWrap(m[1], m[2]);
+    const gg = GLOSS[m[1]];
+    /* 人工注音优先于歌词里作者自己写的读音，否则「改了这句却不变」 */
+    const rd = readOf(m[1]) || m[2];
+    out += gg ? rubyWithGloss(m[1], rd, gg) : rubyWrap(m[1], rd);
     last = m.index + m[0].length;
   }
   if(!last) return await annotatePlain(text);
   if(last < text.length) out += await annotatePlain(text.slice(last));
   return out;
+}
+
+/* ================= 查词 ================= */
+/* 把一句切成可点的词表：{t: 原文, r: 假名}。原文带人工读音的（宇宙(そら)）直接用括号里的 */
+async function wordsOf(text){
+  if(!text) return [];
+  const out = [];
+  RUBY_PAREN.lastIndex = 0;
+  let last = 0, m, segs = [];
+  while((m = RUBY_PAREN.exec(text))){
+    if(m.index > last) segs.push({ plain: text.slice(last, m.index) });
+    segs.push({ surf: m[1], read: m[2] });
+    last = m.index + m[0].length;
+  }
+  if(!segs.length) segs.push({ plain: text });
+  else if(last < text.length) segs.push({ plain: text.slice(last) });
+
+  for(const sg of segs){
+    if(sg.surf){
+      const man = readOf(sg.surf);
+      out.push({ t: sg.surf, r: man || sg.read, a: sg.read, m: man ? 1 : 0 });
+      continue;
+    }
+    let tks;
+    try{ tks = mergeTokens(await tokenizeText(sg.plain)); }catch(e){ tks = [{ surface_form: sg.plain }]; }
+    for(const tk of tks){
+      let a = tk.reading || tk.pronunciation || '';
+      if(a && a !== '*') a = kata2hira(a); else a = '';
+      const man = readOf(tk.surface_form);
+      out.push({ t: tk.surface_form, r: man || a, a: a, m: man ? 1 : 0 });
+    }
+  }
+  return out;
+}
+
+async function copyText(txt, label){
+  try{
+    await navigator.clipboard.writeText(txt);
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand('copy'); }catch(_){}
+    ta.remove();
+  }
+  toast('已复制 ' + (label || txt));
+}
+
+let wsIdx = -1, wsMode = 'copy', wsPick = '';
+
+async function openWords(i){
+  const ln = lines[i];
+  if(!ln) return;
+  wsIdx = i; wsPick = '';
+  /* 「同时套用到其他歌」每次打开都回到不勾：套用是会改动别的歌的操作，不该默认带上 */
+  const all = $('#rdAll');
+  if(all) all.checked = false;
+  $('#wsText').textContent = ln.jp || '';
+  $('#wordSheet').classList.remove('hidden');
+  setWsMode('copy');
+}
+
+function setWsMode(m){
+  if(wsMode !== m) wsPick = '';
+  wsMode = m;
+  $('#wsTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.getAttribute('data-t') === m));
+  $('#wsHint').textContent = m === 'copy'
+    ? '点一个词 = 复制它（只有原文，不带假名）。假名给你看，不进剪贴板。'
+    : m === 'read'
+      ? '点一个词 → 在下面填假名。默认只存给「这首歌」，换首歌唱法不同可以另填；勾了下面那行才顺带写到别的歌。'
+      : '点一个词 → 在下面填中文释义。释义按词形存，所有歌通用。';
+  $('#glRow').classList.toggle('hidden', m !== 'gloss');
+  $('#rdRow').classList.toggle('hidden', m !== 'read');
+  /* 分词是异步的，等它出来再填注音行，否则「自动读音」会是空的 */
+  renderWsWords().then(() => { if(wsMode === 'read') paintRd(); });
+}
+
+async function renderWsWords(){
+  const ln = lines[wsIdx];
+  const box = $('#wsWords');
+  if(!ln) return;
+  if(!ln.words){
+    box.innerHTML = '<div class="wshint">正在分词…</div>';
+    ln.words = await wordsOf(ln.jp).catch(() => []);
+  }
+  if(!ln.words.length){ box.innerHTML = '<div class="wshint">这句分不出词</div>'; return; }
+  box.innerHTML = '';
+  for(const w of ln.words){
+    const b = document.createElement('button');
+    b.className = 'wchip' + (wsPick && wsPick === w.t ? ' sel' : '');
+    b.innerHTML = '<span class="wt"></span><span class="wr"></span><span class="wd"></span>';
+    b.querySelector('.wt').textContent = w.t;
+    const wr = b.querySelector('.wr');
+    wr.textContent = (w.r && w.r !== w.t) ? w.r : '';
+    if(w.m) wr.classList.add('man');
+    b.querySelector('.wd').textContent = GLOSS[w.t] || '';
+    b.onclick = () => onWordTap(w);
+    box.appendChild(b);
+  }
+}
+
+/* 注音行：左边词形、右边显示自动读音，输入框填人工读音 */
+function paintRd(){
+  const ln = lines[wsIdx];
+  const w = ln && ln.words ? ln.words.find(x => x.t === wsPick) : null;
+  $('#rdWord').textContent = wsPick || '选一个词';
+  $('#rdAuto').textContent = w ? ('自动 ' + (w.a || '无')) : '';
+  $('#rdInput').value = wsPick ? readOf(wsPick) : '';
+}
+
+function onWordTap(w){
+  if(wsMode === 'copy'){
+    copyText(w.t, w.t + (w.r ? '（' + w.r + '）' : ''));
+    return;
+  }
+  wsPick = w.t;
+  renderWsWords();
+  if(wsMode === 'read'){
+    paintRd();
+    $('#rdInput').focus();
+    return;
+  }
+  $('#glWord').textContent = w.t;
+  $('#glInput').value = GLOSS[w.t] || '';
+  $('#glInput').focus();
+}
+
+/* 释义/注音改了都要重排当前这首，让正文跟着变 */
+async function refreshGloss(){
+  if(!cur || !cur.rec) return;
+  const f = follow;
+  follow = false;
+  try{ await buildLines(); }catch(e){}
+  follow = f;
+  if(wsIdx >= 0){ await renderWsWords(); if(wsMode === 'read') paintRd(); }
 }
 
 /* ================= 歌词解析 ================= */
@@ -742,14 +1059,153 @@ function prettyName(fn){
   return { title: s, artist: '' };
 }
 
+/* ================= 网易云 .ncm 解密 ================= */
+/* 全部在本地做，音频不出手机；解出的 blob 不落盘，随 objectURL 一起回收。
+   格式依据 taurusxin/ncmdump 1.5.1（src/ncmcrypt.cpp），已用其 test.ncm 实测通过。
+   Web Crypto 不支持 ECB，所以 AES-128 自己实现（每首只解 1~3 个块，开销可忽略）。 */
+const NCM_GF = (a, b) => { let p = 0; for(let i = 0; i < 8; i++){ if(b & 1) p ^= a; const hi = a & 0x80; a = (a << 1) & 0xff; if(hi) a ^= 0x1b; b >>= 1; } return p; };
+const NCM_SB = (() => {
+  const sb = new Uint8Array(256), ib = new Uint8Array(256);
+  for(let i = 0; i < 256; i++){
+    let m = 0;
+    if(i){ for(let j = 1; j < 256; j++){ if(NCM_GF(i, j) === 1){ m = j; break; } } }
+    const x = m, rol = n => ((x << n) | (x >> (8 - n))) & 0xff;
+    sb[i] = (x ^ rol(1) ^ rol(2) ^ rol(3) ^ rol(4) ^ 0x63) & 0xff;
+  }
+  for(let i = 0; i < 256; i++) ib[sb[i]] = i;
+  return { sb, ib };
+})();
+function ncmKeys(key){
+  const w = new Uint8Array(176); w.set(key, 0);
+  const rc = [1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36], sb = NCM_SB.sb;
+  for(let i = 4; i < 44; i++){
+    let t = [w[(i - 1) * 4], w[(i - 1) * 4 + 1], w[(i - 1) * 4 + 2], w[(i - 1) * 4 + 3]];
+    if(i % 4 === 0) t = [sb[t[1]] ^ rc[i / 4 - 1], sb[t[2]], sb[t[3]], sb[t[0]]];
+    for(let k = 0; k < 4; k++) w[i * 4 + k] = w[(i - 4) * 4 + k] ^ t[k];
+  }
+  return w;
+}
+function ncmEcb(key, src){
+  const w = ncmKeys(key), n = src.length >> 4, out = new Uint8Array(n * 16), ib = NCM_SB.ib;
+  for(let b = 0; b < n; b++){
+    const s = new Uint8Array(16), so = b * 16;
+    for(let i = 0; i < 16; i++) s[i] = src[so + i] ^ w[160 + i];
+    for(let round = 9; round >= 0; round--){
+      const g = new Uint8Array(16);
+      for(let c = 0; c < 4; c++) for(let r = 0; r < 4; r++) g[c * 4 + r] = ib[s[(((c - r + 4) & 3) * 4) + r]];
+      for(let i = 0; i < 16; i++) s[i] = g[i] ^ w[round * 16 + i];
+      if(round > 0) for(let c = 0; c < 4; c++){
+        const a0 = s[c * 4], a1 = s[c * 4 + 1], a2 = s[c * 4 + 2], a3 = s[c * 4 + 3];
+        s[c * 4]     = NCM_GF(a0, 14) ^ NCM_GF(a1, 11) ^ NCM_GF(a2, 13) ^ NCM_GF(a3, 9);
+        s[c * 4 + 1] = NCM_GF(a0, 9)  ^ NCM_GF(a1, 14) ^ NCM_GF(a2, 11) ^ NCM_GF(a3, 13);
+        s[c * 4 + 2] = NCM_GF(a0, 13) ^ NCM_GF(a1, 9)  ^ NCM_GF(a2, 14) ^ NCM_GF(a3, 11);
+        s[c * 4 + 3] = NCM_GF(a0, 11) ^ NCM_GF(a1, 13) ^ NCM_GF(a2, 9)  ^ NCM_GF(a3, 14);
+      }
+    }
+    out.set(s, so);
+  }
+  const pad = n ? out[n * 16 - 1] : 0;
+  return (pad >= 1 && pad <= 16) ? out.subarray(0, n * 16 - pad) : out;
+}
+const NCM_CK = new Uint8Array([104, 122, 72, 82, 65, 109, 115, 111, 53, 107, 73, 110, 98, 97, 120, 87]);
+const NCM_MK = new Uint8Array([35, 49, 52, 108, 106, 107, 95, 33, 92, 93, 38, 48, 85, 60, 39, 40]);
+const NCM_MAGIC = [67, 84, 69, 78, 70, 68, 65, 77]; /* CTENFDAM */
+function isNcm(u8){
+  if(u8.length < 16) return false;
+  for(let i = 0; i < 8; i++) if(u8[i] !== NCM_MAGIC[i]) return false;
+  return true;
+}
+function ncmDecode(u8){
+  if(!isNcm(u8)) throw new Error('不是 ncm 文件');
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let p = 10;
+  const kl = dv.getUint32(p, true); p += 4;
+  if(!kl || kl > 0x10000 || p + kl > u8.length) throw new Error('密钥区异常');
+  const raw = u8.slice(p, p + kl);
+  for(let i = 0; i < raw.length; i++) raw[i] ^= 0x64;
+  p += kl;
+  const kp = ncmEcb(NCM_CK, raw);
+  if(kp.length <= 17) throw new Error('密钥解密失败');
+  const box = new Uint8Array(256);
+  for(let i = 0; i < 256; i++) box[i] = i;
+  for(let i = 0, last = 0, ko = 0; i < 256; i++){
+    const sw = box[i], c = (sw + last + kp[17 + ko++]) & 0xff;
+    if(ko >= kp.length - 17) ko = 0;
+    box[i] = box[c]; box[c] = sw; last = c;
+  }
+  let meta = null;
+  const ml = dv.getUint32(p, true); p += 4;
+  if(ml > 0 && p + ml <= u8.length){
+    const m = u8.slice(p, p + ml);
+    for(let i = 0; i < m.length; i++) m[i] ^= 0x63;
+    p += ml;
+    try{
+      const b64 = new TextDecoder().decode(m.subarray(22));
+      const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+      meta = JSON.parse(new TextDecoder().decode(ncmEcb(NCM_MK, bin).subarray(6)));
+    }catch(e){ meta = null; }
+  }
+  p += 5;
+  const cfl = dv.getUint32(p, true); p += 4;
+  const il = dv.getUint32(p, true); p += 4;
+  let cover = null;
+  if(il > 0 && p + il <= u8.length) cover = u8.slice(p, p + il);
+  p += il + (cfl - il);
+  if(p >= u8.length) throw new Error('音频区为空');
+  /* 密钥流只跟 i mod 256 有关，预先把 256 字节算好，比逐字节查表快一个数量级 */
+  const ks = new Uint8Array(256);
+  for(let i = 0; i < 256; i++){
+    const j = (i + 1) & 0xff;
+    ks[i] = box[(box[j] + box[(box[j] + j) & 0xff]) & 0xff];
+  }
+  const audio = u8.slice(p);
+  for(let i = 0; i < audio.length; i++) audio[i] ^= ks[i & 0xff];
+  let fmt = 'bin';
+  if(audio[0] === 0x49 && audio[1] === 0x44 && audio[2] === 0x33) fmt = 'mp3';
+  else if(audio[0] === 0x66 && audio[1] === 0x4c && audio[2] === 0x61 && audio[3] === 0x43) fmt = 'flac';
+  else if(audio[4] === 0x66 && audio[5] === 0x74 && audio[6] === 0x79 && audio[7] === 0x70) fmt = 'm4a';
+  return { format: fmt, audio, meta, cover };
+}
+
+const IS_NCM = /\.ncm$/i;
+let ncmMemo = { name: '', blob: null, meta: null };
+async function ncmAsPlayable(file, name){
+  if(ncmMemo.name === name && ncmMemo.blob) return ncmMemo;
+  const r = ncmDecode(new Uint8Array(await file.arrayBuffer()));
+  if(r.format === 'bin') throw new Error('解出来后不是已知音频格式');
+  const type = r.format === 'mp3' ? 'audio/mpeg' : r.format === 'flac' ? 'audio/flac' : 'audio/mp4';
+  ncmMemo = { name, blob: new Blob([r.audio], { type }), meta: r.meta };
+  return ncmMemo;
+}
+
+/* ================= 环境探测 ================= */
+/* 只关心一件事：这个浏览器能不能直接读文件夹（Chrome 132+ 才有 showDirectoryPicker） */
+const env = { hasDir: false };
+function detectEnv(){
+  env.hasDir = !!window.showDirectoryPicker;
+}
+
+/* 正式版不再显示诊断条，只保留「浏览器不支持文件夹直读」这一种降级：
+   按钮置灰说明原因，把临时选歌这条路亮出来 */
+function renderEnv(){
+  if(!env.hasDir){
+    const btn = $('#pickDir');
+    btn.textContent = '选文件夹不可用（需 Chrome 132+）';
+    btn.disabled = true;
+    $('#tempPick').classList.remove('hidden');
+    toast('这个浏览器不能直接读文件夹：Chrome 132 以上才能用。走下面「临时选几首歌」也能听，但下次打开不记住。', 4600);
+  }
+}
+
 async function pickDir(){
   if(!window.showDirectoryPicker){
-    return pickFiles();
+    toast('这个浏览器不支持选文件夹，请升级 Chrome 后重开');
+    return;
   }
   try{
     dirHandle = await window.showDirectoryPicker({ mode: 'read' });
     await DB.set('dir', dirHandle);
-    await scanDir();
+    await useDir();
   }catch(e){
     if(e && e.name === 'AbortError') return;
     toast('打开文件夹失败：' + (e.message || e));
@@ -758,7 +1214,7 @@ async function pickDir(){
 
 async function pickFiles(){
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.multiple = true; inp.accept = 'audio/*';
+  inp.type = 'file'; inp.multiple = true; inp.accept = 'audio/*,.ncm';
   inp.onchange = () => {
     songs = [...inp.files].filter(f => AUDIO_EXT.test(f.name)).map(f => ({ name: f.name, getFile: async () => f }));
     renderList();
@@ -769,10 +1225,29 @@ async function pickFiles(){
 
 async function scanDir(){
   songs = [];
+  const used = new Set();
+  /* 递归往下翻：网易云歌放在 Download/netease/cloudmusic/Music 这种多层目录里，
+     只扫一层的话选 Download 就会是空歌单。深度限 3、跳过隐藏目录、总数封顶 3000。 */
+  async function walk(dir, depth, prefix){
+    if(songs.length >= 3000) return;
+    try{
+      for await (const [name, h] of dir.entries()){
+        if(songs.length >= 3000) return;
+        if(name.startsWith('.')) continue;
+        if(h.kind === 'file'){
+          if(!AUDIO_EXT.test(name)) continue;
+          let disp = name;
+          if(used.has(disp)) disp = prefix ? prefix + '/' + name : name;
+          used.add(disp);
+          songs.push({ name: disp, getFile: () => h.getFile() });
+        }else if(depth < 3){
+          await walk(h, depth + 1, prefix ? prefix + '/' + name : name);
+        }
+      }
+    }catch(e){ /* 某个子目录读不了就跳过，不影响别的 */ }
+  }
   try{
-    for await (const [name, h] of dirHandle.entries()){
-      if(h.kind === 'file' && AUDIO_EXT.test(name)) songs.push({ name, getFile: () => h.getFile() });
-    }
+    await walk(dirHandle, 0, '');
   }catch(e){
     toast('读取文件夹失败：' + (e.message || e));
   }
@@ -784,7 +1259,7 @@ function renderList(){
   const box = $('#songs');
   paintQ();
   if(!songs.length){
-    box.innerHTML = '<div class="empty">这个文件夹里没找到音频文件。<br>支持 mp3 / flac / m4a / aac / ogg / wav。</div>';
+    box.innerHTML = '<div class="empty">这个文件夹里没找到音频文件。<br>支持 mp3 / flac / m4a / aac / ogg / wav / ncm。<br><br>歌可能藏在更深一层，比如网易云的<br>Download/netease/cloudmusic/Music —— 再选一次到那一层试试。</div>';
     return;
   }
   box.innerHTML = '';
@@ -812,7 +1287,13 @@ async function openSong(i, opts){
   savePos();
   const oldUrl = cur && cur.url;
   stopLoop();
+  follow = true;
+  $('#lyrics').scrollTop = 0;
   lines = []; curIdx = -1; loopIdx = -1; loopOn = false; $('#btnLoop').classList.remove('act');
+  /* 查词面板还开着的话，它记的是上一首的行号；切歌后必须清掉，
+     否则接着点「注音/释义」会把词写到新歌头上 */
+  wsIdx = -1; wsPick = '';
+  $('#wordSheet').classList.add('hidden');
   setTiming(false);
   if(queue.length !== songs.length) rebuildQueue(i);
   qi = Math.max(0, queue.indexOf(i));
@@ -836,6 +1317,20 @@ async function openSong(i, opts){
     return;
   }
   DB.set('last', { name: s.name }).catch(()=>{});
+
+  /* 网易云下载的 .ncm：本地解成普通音频再喂给播放器 */
+  if(IS_NCM.test(s.name)){
+    if(ncmMemo.name !== s.name) toast('正在解密 ncm…');
+    try{
+      const got = await ncmAsPlayable(file, s.name);
+      file = got.blob;
+      if(got.meta && got.meta.musicName) $('#pTitle').textContent = got.meta.musicName;
+    }catch(e){
+      $('#lyrics').innerHTML = '<div class="empty">这个 ncm 解不开：' + esc(e.message || e) + '<br>换 mp3/flac 试试</div>';
+      toast('ncm 解密失败');
+      return;
+    }
+  }
 
   /* 只有恢复上次那首才取位置；其余入口直接 0 */
   pendingPos = auto ? ((await DB.get('pos:' + s.name)) || 0) : 0;
@@ -920,17 +1415,32 @@ function renderLyrics(){
   const frag = document.createDocumentFragment();
   lines.forEach((ln, i) => {
     const el = document.createElement('div');
-    el.className = 'line';
+    const jp = ln.html || esc(ln.jp);
+    /* 有释义的行注音要占两行，单独给一个更大的行距，免得压到上一行 */
+    el.className = 'line' + (allTr ? ' open' : '') + (jp.indexOf('data-g="') >= 0 ? ' hasgl' : '');
     el.dataset.i = i;
-    el.innerHTML = '<span class="tk"></span><div class="body"><div class="jp">' + (ln.html || esc(ln.jp)) + '</div>' +
+    el.innerHTML = '<button class="tk" aria-label="从这句开始播"></button><div class="body"><div class="jp">' + jp + '</div>' +
       (ln.zh ? '<div class="tr"><div class="trc"><div class="tri">' + esc(ln.zh) + '</div></div></div>' : '') + '</div>';
     el.onclick = () => onLineTap(i, el);
+    /* 行首三角：从这句播。以前这个位置只是装饰，点了会穿透到句子上去展开译文 */
+    const tk = el.querySelector('.tk');
+    tk.onclick = ev => { ev.stopPropagation(); if(timing) return; seekToLine(i, true); };
+    /* 双击句子：查词（不用拖光标选字） */
+    el.ondblclick = ev => { ev.stopPropagation(); if(timing) return; openWords(i); };
     ln.el = el;
     frag.appendChild(el);
   });
   box.appendChild(frag);
 }
 
+/* 全部译文开关：一次性给所有行加/去 .open，之后单句点击照常覆盖 */
+let allTr = false;
+function applyAllTr(on){
+  allTr = !!on;
+  document.querySelectorAll('#lyrics .line').forEach(el => el.classList.toggle('open', allTr));
+  const b = $('#btnTr');
+  if(b) b.classList.toggle('act', allTr);
+}
 function onLineTap(i, el){
   if(timing){
     /* 打点模式下点歌词只是把目标挪到这句，不写入时间，避免误点 */
@@ -945,7 +1455,7 @@ function onLineTap(i, el){
 /* 点行首三角：从这句播 */
 function seekToLine(i, hard){
   if(!lines[i]) return;
-  au.currentTime = Math.max(0, lines[i].t);
+  try{ au.currentTime = Math.max(0, lines[i].t); }catch(e){}
   curIdx = i;
   if(loopOn){ loopIdx = i; }
   paintCur();
@@ -999,8 +1509,32 @@ function syncCur(force){
   if(idx !== curIdx || force){ curIdx = idx; paintCur(); }
 }
 
+/* ================= 当前句居中 ================= */
+/* follow=true 时当前句自动滚到可视区正中；手指一滑就停止跟随，
+   「回到当前句」按钮恢复。程序滚动会先记一笔时间戳，用它和用户滚动区分开。 */
+let follow = true, lastProgScroll = 0, centerTimer = 0;
+
+function centerCur(){
+  if(!follow) return;
+  const box = $('#lyrics');
+  const el = lines[curIdx] && lines[curIdx].el;
+  if(!box || !el) return;
+  const er = el.getBoundingClientRect(), br = box.getBoundingClientRect();
+  const target = box.scrollTop + (er.top - br.top) - (box.clientHeight - el.offsetHeight) / 2;
+  const max = Math.max(0, box.scrollHeight - box.clientHeight);
+  lastProgScroll = Date.now();
+  box.scrollTo({ top: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
+}
+
+function scheduleCenter(){
+  if(!follow) return;
+  if(centerTimer) return;
+  centerTimer = setTimeout(() => { centerTimer = 0; centerCur(); }, 70);
+}
+
 function paintCur(){
   lines.forEach((ln, i) => { if(ln.el) ln.el.classList.toggle('cur', i === curIdx); });
+  scheduleCenter();
   checkFab();
 }
 
@@ -1010,7 +1544,8 @@ function checkFab(){
   if(!el){ fab.classList.add('hidden'); return; }
   const r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
   const visible = r.bottom > b.top + 8 && r.top < b.bottom - 8;
-  fab.classList.toggle('hidden', visible);
+  /* 跟着走且当前句就在眼前 → 不用按钮；不跟随时一直留着，随时能回去 */
+  fab.classList.toggle('hidden', follow && visible);
 }
 
 /* ================= 控制 ================= */
@@ -1056,6 +1591,8 @@ $('#btnPlay').onclick = togglePlay;
 
 /* ================= 播放模式 ================= */
 const MODE_TXT = { list: '列表循环', one: '单曲循环', shuffle: '随机播放' };
+/* 底部工具行窄，按钮上只用两个字；菜单里仍是全称 */
+const MODE_SHORT = { list: '循环', one: '单曲', shuffle: '随机' };
 
 /* 列表模式下顺序就是 0..n-1；随机模式洗一次牌，绝不用每次 random 抽（会连播同一首） */
 function rebuildQueue(curSongIdx){
@@ -1078,7 +1615,7 @@ function curSongIdx(){
 }
 
 function paintMode(){
-  $('#btnMode').innerHTML = MODE_TXT[mode] + '<span class="car">▾</span>';
+  $('#btnMode').innerHTML = (MODE_SHORT[mode] || MODE_TXT[mode]) + '<span class="car">▾</span>';
   $('#modeMenu').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.getAttribute('data-m') === mode));
 }
 
@@ -1241,10 +1778,19 @@ $('#back').onclick = () => {
 };
 
 $('#fab').onclick = () => {
-  const el = lines[curIdx] && lines[curIdx].el;
-  if(el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  follow = true;
+  checkFab();
+  centerCur();
 };
-$('#lyrics').addEventListener('scroll', checkFab);
+
+/* 用户自己滑动 → 停止跟随；程序滚动留下的时间戳用来区分，不然每一帧都会被判成用户滚动 */
+$('#lyrics').addEventListener('scroll', () => {
+  if(follow && Date.now() - lastProgScroll > 700){
+    follow = false;
+    $('#fab').classList.remove('hidden');
+  }
+  checkFab();
+}, { passive: true });
 
 /* ================= 打点校时 ================= */
 /* 手点必然慢半拍，统一减掉一个固定值，比让用户去抢那一瞬间靠谱 */
@@ -1280,6 +1826,8 @@ function setTiming(on){
   document.body.classList.toggle('timing', on);
   $('#tapPanel').classList.toggle('hidden', !on);
   $('#btnTiming').classList.toggle('act', on);
+  /* 打点自己管滚动，别让居中跟随来抢 */
+  if(on) follow = false;
   if(!on){ lines.forEach(l => l.el && l.el.classList.remove('pending')); return; }
   tapUndo = [];
   const nx = firstUnmarked(0);
@@ -1374,14 +1922,18 @@ $('#btnSave').onclick = async () => {
     cur.rec = {
       raw: raw, entries: parsed.entries, hasTs: parsed.hasTs,
       manual: keep ? prev.manual : {}, dict: prev.dict || '',
-      net: prev.net || '', autoT: []
+      net: prev.net || '', netTl: prev.netTl || '', autoT: []
     };
-    /* 之前取过网易云时间轴的，重新贴歌词后要再对一次 */
-    let hit = 0;
+    /* 人工注音属于这首歌，重贴歌词（改错字/换翻译）不该把标好的读音弄丢 */
+    if(prev.read && Object.keys(prev.read).length) cur.rec.read = prev.read;
+    /* 之前取过网易云的，重新贴歌词后要再对一次时间轴，顺便补回译文 */
+    let hit = 0, filled = 0;
     if(cur.rec.net){
       const r = alignTimes(cur.rec.entries, parseNetLrc(cur.rec.net));
       cur.rec.autoT = r.times;
       hit = r.hit;
+      const tlPrev = Array.isArray(cur.rec.netTl) ? cur.rec.netTl : parseNetLrc(cur.rec.netTl || '');
+      filled = fillZh(cur.rec.entries, tlPrev, r.times);
     }
     await persistRec();
     await buildLines();
@@ -1391,7 +1943,7 @@ $('#btnSave').onclick = async () => {
     if(hit) src = '（网易云时间轴对上 ' + hit + '/' + n + ' 句）';
     else if(parsed.hasTs) src = '（用了歌词自带的时间轴）';
     else src = '（时间轴按句平均，可打点）';
-    toast('识别 ' + n + ' 句，' + m + ' 句有译文' + src, 3400);
+    toast('识别 ' + n + ' 句，' + m + ' 句有译文' + (filled ? '（补了 ' + filled + ' 句）' : '') + src, 3400);
   }catch(e){
     mask(false);
     toast('出错了：' + (e.message || e));
@@ -1434,36 +1986,107 @@ $('#btnNet').onclick = () => {
 };
 $('#ntCancel').onclick = () => $('#ntSheet').classList.add('hidden');
 
-async function fetchNetTimes(id){
-  const d = await jsonp('https://music.163.com/api/song/media?id=' + id);
-  return { lrc: parseNetLrc(d && d.lyric), raw: (d && d.lyric) || '' };
+/* ---------- 歌词来源 ----------
+   网易云官方接口（/api/song/media 只有原文、/api/song/lyric 才带译文）既不返 CORS 头、
+   也不认 callback，纯静态页读不到译文——这条路走不通，公共中转也不稳。
+   改走一个公开的网易云镜像 API：直接返 {lyric, tlyric}，带 Access-Control-Allow-Origin:*，
+   国内可直连，不用部署任何东西。镜像不通时退回官方 JSONP，那条只有时间轴。 */
+const MIRROR_API = 'https://music-api.gdstudio.xyz/api.php';
+
+async function fetchJson(url, ms){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try{
+    const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+  finally{ clearTimeout(timer); }
 }
 
-/* 拿到时间轴后并进当前这首歌：有已贴歌词就按文本对齐，没有就直接用接口的原文 */
+/* 一次拿齐时间轴 + 译文。why: mirror 镜像 / official 官方只给轴 / fail
+   镜像偶发抽风，重试一次；两次都不行才退回官方 JSONP */
+async function fetchNetAll(id){
+  const key = encodeURIComponent(id);
+  const url = MIRROR_API + '?types=lyric&source=netease&id=' + key;
+  for(let i = 0; i < 2; i++){
+    const m = await fetchJson(url, 9000);
+    if(m && (m.lyric || m.tlyric)){
+      const lrc = parseNetLrc(m.lyric || '');
+      if(lrc.length) return { lrc: lrc, tl: parseNetLrc(m.tlyric || ''), raw: m.lyric || '', why: 'mirror' };
+    }
+    if(i === 0) await new Promise(r => setTimeout(r, 700));
+  }
+  const d = await jsonp('https://music.163.com/api/song/media?id=' + key).catch(() => null);
+  const raw = (d && d.lyric) || '';
+  const lrc = parseNetLrc(raw);
+  return { lrc: lrc, tl: [], raw: raw, why: lrc.length ? 'official' : 'fail' };
+}
+
+/* 译文和原文时间戳一致，按时间取最近的一条，超过 0.6 秒就当没有 */
+function tlAt(tl, t){
+  if(!tl.length) return '';
+  let best = '', bd = Infinity;
+  for(const x of tl){
+    const d = Math.abs(x.t - t);
+    if(d < bd){ bd = d; best = x.txt; }
+  }
+  return bd <= 0.6 ? best : '';
+}
+
+/* 已经手写的译文不动，只补空的 */
+function fillZh(entries, tl, times){
+  if(!tl || !tl.length) return 0;
+  let n = 0;
+  entries.forEach((e, i) => {
+    if(e.zh) return;
+    const t = times ? times[i] : e.t;
+    if(t == null) return;
+    const s = tlAt(tl, t);
+    if(s){ e.zh = s; n++; }
+  });
+  return n;
+}
+
+/* 拿到后并进当前这首歌：已有歌词就按文本对齐时间轴并补译文，没有就直接用接口的原文。
+   时间轴和译文是同一次请求拿回来的，一次到位，不用分两趟。 */
 async function applyNet(id){
-  const { lrc, raw } = await fetchNetTimes(id);
-  if(!lrc.length) return { ok: false, msg: '这首在网易云没有带时间轴的歌词' };
+  const got = await fetchNetAll(id);
+  if(!got.lrc.length) return { ok: false, msg: '这首在网易云没有带时间轴的歌词' };
+  const tl = got.tl || [];
+  const noTl = tl.length ? ''
+    : (got.why === 'mirror' ? '（这首在网易云没有译文）' : '（只取到时间轴，译文取不到）');
+
   if(cur.rec && cur.rec.entries && cur.rec.entries.length){
-    const r = alignTimes(cur.rec.entries, lrc);
+    const r = alignTimes(cur.rec.entries, got.lrc);
     const n = cur.rec.entries.length;
     /* 一行都没对上，多半不是同一版歌词，宁可不动也别把时间轴搞乱 */
     if(!r.hit) return { ok: false, msg: '时间轴和这份歌词一行都没对上，可能取的不是同一版' };
-    cur.rec.net = raw;
+    cur.rec.net = got.raw;
+    cur.rec.netTl = tl;
     cur.rec.autoT = r.times;
     cur.rec.manual = cur.rec.manual || {};
-    let msg = '时间轴 ' + lrc.length + ' 行，对上 ' + r.hit + '/' + n + ' 句';
+    const filled = fillZh(cur.rec.entries, tl, r.times);
+    let msg = '时间轴对上 ' + r.hit + '/' + n + ' 句';
+    if(filled) msg += '，补了 ' + filled + ' 句译文';
+    else msg += noTl;
     if(r.hit < n * 0.5) msg += '（对上的少，可能不是同一版歌词）';
     await persistRec();
     await buildLines();
-    return { ok: true, msg };
+    return { ok: true, msg: msg };
   }
+
+  const entries = got.lrc.map(l => ({ t: l.t, jp: l.txt, zh: '' }));
+  const m = fillZh(entries, tl);
+  const prev0 = cur.rec || {};
   cur.rec = {
-    entries: lrc.map(l => ({ t: l.t, jp: l.txt, zh: '' })),
-    hasTs: true, manual: {}, dict: '', net: raw, autoT: []
+    entries: entries,
+    hasTs: true, manual: {}, dict: prev0.dict || '', net: got.raw, netTl: tl, autoT: []
   };
+  if(prev0.read && Object.keys(prev0.read).length) cur.rec.read = prev0.read;
   await persistRec();
   await buildLines();
-  return { ok: true, msg: '取到 ' + lrc.length + ' 句时间轴，还没有译文' };
+  return { ok: true, msg: '取到 ' + got.lrc.length + ' 句时间轴' + (m ? '、' + m + ' 句译文' : noTl) };
 }
 
 $('#ntGo').onclick = async () => {
@@ -1529,6 +2152,32 @@ async function runDemo(){
   $('#list').classList.add('hidden');
   $('#player').classList.remove('hidden');
   cur.rec = { hasTs: false, manual: {}, entries: demo.map(d => ({ t: null, jp: d[0], zh: d[1] })) };
+
+  /* ?demo&noengine：不经过分词/词典，注音写死，用来单看排版（无头环境 Worker 起不来） */
+  if(location.search.indexOf('noengine') >= 0){
+    const hard = {
+      '夜明けの風が　窓を叩く': '<ruby>夜明け<rt>よあけ</rt></ruby>の<span class="hg" data-g="风"><ruby>風<rt>かぜ</rt></ruby></span>が　<span class="hg" data-g="窗户"><ruby>窓<rt>まど</rt></ruby></span>を<ruby>叩く<rt>たたく</rt></ruby>',
+      'まだ眠い目を　こすりながら': 'まだ<span class="hg" data-g="困倦的"><ruby>眠い<rt>ねむい</rt></ruby></span><span class="hg" data-g="眼睛"><ruby>目<rt>め</rt></ruby></span>を　こすりながら',
+      '昨日の言葉が　胸に残って': '<span class="hg" data-g="昨天"><ruby>昨日<rt>きのう</rt></ruby></span>の<span class="hg" data-g="话语"><ruby>言葉<rt>ことば</rt></ruby></span>が　<span class="hg" data-g="胸口"><ruby>胸<rt>むね</rt></ruby></span>に<ruby>残って<rt>のこって</rt></ruby>',
+      '一人で大人になった気がした': '一人で<span class="hg" data-g="大人"><ruby>大人<rt>おとな</rt></ruby></span>になった<ruby>気<rt>き</rt></ruby>がした',
+      '歩き出すよ　この街の向こうへ': '<ruby>歩き出す<rt>あるきだす</rt></ruby>よ　この<span class="hg" data-g="街道"><ruby>街<rt>まち</rt></ruby></span>のむこうへ',
+      '約束なんて　要らないから': '<span class="hg" data-g="约定"><ruby>約束<rt>やくそく</rt></ruby></span>なんて　<span class="hg" data-g="不需要"><ruby>要らない<rt>いらない</rt></ruby></span>から',
+      'ただ君の声を　覚えていたい': 'ただ<span class="hg" data-g="你"><ruby>君<rt>きみ</rt></ruby></span>の<span class="hg" data-g="声音"><ruby>声<rt>こえ</rt></ruby></span>を　<ruby>覚えて<rt>おぼえて</rt></ruby>いたい'
+    };
+    lines = demo.map((d, i) => ({ t: i * 9, jp: d[0], zh: d[1], html: hard[d[0]] || esc(d[0]) }));
+    curIdx = 2;
+    renderLyrics();
+    paintCur();
+    if(lines[2] && lines[2].el) lines[2].el.classList.add('open');
+    /* ?w390：无头截图窗口有最小宽度，套一个 390px 的框看真机换行 */
+    if(location.search.indexOf('w390') >= 0){
+      const p = document.getElementById('player');
+      p.style.width = '390px'; p.style.left = '0'; p.style.right = 'auto';
+      p.style.outline = '1px dashed #c8c4bb';
+    }
+    return;
+  }
+
   await buildLines();
   if(lines[2] && lines[2].el) lines[2].el.classList.add('open');
   curIdx = 1; paintCur();
@@ -1541,6 +2190,87 @@ async function runDemo(){
   }
   $('#pickDir').onclick = pickDir;
 
+  detectEnv();
+  renderEnv();
+  $('#tempPick').onclick = pickFiles;
+
+  $('#wsClose').onclick = () => $('#wordSheet').classList.add('hidden');
+  $('#wordSheet').onclick = ev => { if(ev.target.id === 'wordSheet') $('#wordSheet').classList.add('hidden'); };
+  $('#wsCopyLine').onclick = () => {
+    const t = $('#wsText').textContent;
+    if(t) copyText(t, '整句');
+  };
+  $('#wsTabs').onclick = ev => {
+    const b = ev.target.closest('button[data-t]');
+    if(b) setWsMode(b.getAttribute('data-t'));
+  };
+  $('#glSave').onclick = async () => {
+    if(!wsPick){ toast('先在上面的词里点一个'); return; }
+    const v = $('#glInput').value.trim();
+    if(v) GLOSS[wsPick] = v; else delete GLOSS[wsPick];
+    await DB.set('gloss', GLOSS).catch(()=>{});
+    toast(v ? ('已标注 ' + wsPick + ' = ' + v) : ('已删除 ' + wsPick));
+    await refreshGloss();
+  };
+  $('#glDel').onclick = async () => {
+    if(!wsPick) return;
+    delete GLOSS[wsPick];
+    $('#glInput').value = '';
+    await DB.set('gloss', GLOSS).catch(()=>{});
+    toast('已删除 ' + wsPick);
+    await refreshGloss();
+  };
+
+  /* 人工注音：只收平假名（片假名自动转，长音符ー保留），其余字符一律丢掉 */
+  const cleanKana = s => kata2hira(String(s || '')).replace(/\s+/g, '').replace(/[^\u3041-\u3096\u30fc]/g, '');
+  $('#rdSave').onclick = async () => {
+    if(!wsPick){ toast('先在上面的词里点一个'); return; }
+    if(!cur || !cur.rec){ toast('这首歌还没有歌词，先贴歌词'); return; }
+    const raw = $('#rdInput').value.trim();
+    const v = cleanKana(raw);
+    if(raw && !v){ toast('这里只能填假名，比如 さく'); return; }
+    const all = $('#rdAll').checked && !!v;
+    await setRead(wsPick, v);
+    let msg = v ? ('本歌已注音 ' + wsPick + ' → ' + v) : ('已恢复自动注音 ' + wsPick);
+    if(all){
+      const r = await applyReadAll(wsPick, v);
+      msg += r.wrote ? ('，套用到另外 ' + r.wrote + ' 首') : '';
+      if(r.kept) msg += '（' + r.kept + ' 首已标过别的读音，没动）';
+    }
+    toast(msg);
+    $('#rdInput').value = v;
+    await refreshGloss();
+  };
+  $('#rdDel').onclick = async () => {
+    if(!wsPick) return;
+    if(!cur || !cur.rec) return;
+    await setRead(wsPick, '');
+    $('#rdInput').value = '';
+    toast('本歌已恢复自动注音 ' + wsPick);
+    await refreshGloss();
+  };
+  $('#rdInput').addEventListener('keydown', ev => {
+    if(ev.key === 'Enter'){ ev.preventDefault(); $('#rdSave').click(); }
+  });
+  $('#glInput').addEventListener('keydown', ev => {
+    if(ev.key === 'Enter'){ ev.preventDefault(); $('#glSave').click(); }
+  });
+
+  $('#btnTr').onclick = () => {
+    applyAllTr(!allTr);
+    DB.set('allTr', allTr).catch(()=>{});
+  };
+
+  /* 生词表、旧注音表、「全部译文」开关都要在第一次渲染歌词之前就位，否则第一首不生效 */
+  try{
+    await loadGloss();
+    await retireLegacyRead();
+    const savedTr = await DB.get('allTr');
+    if(savedTr) allTr = true;
+    const tb = $('#btnTr');
+    if(tb) tb.classList.toggle('act', allTr);
+  }catch(e){}
+
   if(location.search.indexOf('demo') >= 0){
     runDemo().catch(e => {
       $('#lyrics').innerHTML = '<div class="empty">demo 出错：' + esc(e && e.message || e) + '</div>';
@@ -1552,34 +2282,45 @@ async function runDemo(){
   restoreDir();
 })();
 
+/* 授权到位后统一走这里：扫目录 → 回上次那首 */
+async function useDir(){
+  await scanDir();
+  const btn = $('#pickDir');
+  btn.textContent = '换一个文件夹';
+  btn.onclick = pickDir;
+  await resumeLast();
+}
+
 async function restoreDir(){
   const savedMode = await DB.get('mode').catch(()=>null);
   if(MODE_TXT[savedMode]){ mode = savedMode; paintMode(); }
 
   const h = await DB.get('dir').catch(()=>null);
-  if(!h) return;
+  if(!h || !window.showDirectoryPicker) return;
   dirHandle = h;
+
   let perm = 'prompt';
   try{ if(h.queryPermission) perm = await h.queryPermission({ mode: 'read' }); }catch(e){}
-  if(perm === 'granted'){
-    await scanDir();
-    $('#pickDir').textContent = '换一个文件夹';
-    await resumeLast();
-    return;
-  }
-  $('#pickDir').textContent = '继续使用上次的文件夹';
-  $('#pickDir').onclick = async () => {
+
+  /* 权限还在（已安装的 PWA 常见）：零点击恢复 */
+  if(perm === 'granted'){ await useDir(); return; }
+
+  /* 权限被浏览器收回：一次点击换回来，不用重选文件夹 */
+  const btn = $('#pickDir');
+  btn.textContent = '继续上次的歌（点一下授权）';
+  btn.onclick = async () => {
     try{
       let p2 = 'granted';
       if(h.requestPermission) p2 = await h.requestPermission({ mode: 'read' });
       if(p2 === 'granted'){
         dirHandle = h;
-        await scanDir();
-        $('#pickDir').textContent = '换一个文件夹';
-        $('#pickDir').onclick = pickDir;
-        await resumeLast();
-      } else toast('没拿到权限，重新选一次吧');
-    }catch(e){ toast('需要重新授权：' + (e.message || e)); }
+        await useDir();
+      }else{
+        toast('没拿到授权，重新选一次文件夹');
+        btn.textContent = '选择音乐文件夹';
+        btn.onclick = pickDir;
+      }
+    }catch(e){ toast('授权失败：' + (e.message || e)); }
   };
 }
 

@@ -1,4 +1,4 @@
-const SHELL = 'kashicho-shell-v13';
+const SHELL = 'kashicho-shell-v14';
 const DICT = 'kashicho-dict-v4';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './kuromoji.js', './dict-worker.js'];
 
