@@ -191,6 +191,16 @@ input[type=text]::placeholder{color:var(--faint)}
 .glrow .glw{flex:none;font-size:14px;color:#B4643C;max-width:32%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .glrow input{flex:1;min-width:0;height:34px;font-size:13px}
 .glrow button{flex:none;font-size:12px;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--fg)}
+/* 注音行：蓝色系，和赭橙的释义行一眼分得开。
+   窄屏放不下一行（词 + 自动读音 + 输入框 + 两个按钮），所以拆成上下两行 */
+.rdrow{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid #C9DCEE;background:#F3F8FD;border-radius:10px}
+.rdline{display:flex;align-items:center;gap:7px;min-width:0}
+.rdrow .rdw{flex:none;font-size:14px;color:var(--accent);max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rdrow .rda{flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rdrow input{flex:1;min-width:0;height:34px;font-size:13px}
+.rdrow button{flex:none;font-size:12px;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--fg)}
+/* 人工改过的读音，加下划线标记，一眼看出哪些不是自动的 */
+.wchip .wr.man{text-decoration:underline;text-underline-offset:2px}
 </style>
 </head>
 <body>
@@ -263,7 +273,8 @@ input[type=text]::placeholder{color:var(--faint)}
     <h2>查词 / 生词</h2>
     <div class="wstabs" id="wsTabs">
       <button data-t="copy" class="on">复制</button>
-      <button data-t="gloss">标注释义</button>
+      <button data-t="read">注音</button>
+      <button data-t="gloss">释义</button>
     </div>
     <div class="wsline" id="wsText"></div>
     <div class="wswords" id="wsWords"></div>
@@ -272,6 +283,17 @@ input[type=text]::placeholder{color:var(--faint)}
       <input id="glInput" type="text" maxlength="24" placeholder="中文释义，如：开花">
       <button id="glSave">存</button>
       <button id="glDel">删</button>
+    </div>
+    <div class="rdrow hidden" id="rdRow">
+      <div class="rdline">
+        <span class="rdw" id="rdWord">选一个词</span>
+        <span class="rda" id="rdAuto"></span>
+      </div>
+      <div class="rdline">
+        <input id="rdInput" type="text" maxlength="24" placeholder="假名，如：さく">
+        <button id="rdSave">存</button>
+        <button id="rdDel">删</button>
+      </div>
     </div>
     <div class="hint" id="wsHint">点一个词 = 复制它（只有原文，不带假名）。假名给你看，不进剪贴板。</div>
     <div class="row">
@@ -605,12 +627,24 @@ function rubyWrap(surf, reading){
   return esc(pre) + '<ruby>' + esc(s) + '<rt>' + esc(rt) + '</rt></ruby>' + esc(suf);
 }
 
-/* ================= 生词释义 ================= */
-/* 按「词形」存，不按歌存：{ "咲く": "开花" }，标一次，别的歌里同一个词自动带上 */
+/* ================= 生词释义 / 人工注音 ================= */
+/* 两者都按「词形」存，不按歌存：{ "咲く": "开花" } / { "咲く": "さく" }
+   标一次，别的歌里同一个词自动带上 */
 let GLOSS = {};
 async function loadGloss(){
   const g = await DB.get('gloss').catch(()=>null);
   GLOSS = (g && typeof g === 'object') ? g : {};
+}
+
+/* 人工注音：优先级高于分词器给的读音。key 是词形，value 是纯平假名 */
+let READ = {};
+async function loadRead(){
+  const r = await DB.get('read').catch(()=>null);
+  READ = (r && typeof r === 'object') ? r : {};
+}
+function readOf(surf){
+  const v = READ[surf];
+  return (typeof v === 'string' && v.trim()) ? v.trim() : '';
 }
 /* 有释义的词：假名照旧交给 ruby，释义另画一层浮在假名上方，
    不再像早先那样把中文挂在词后面把整行撑宽 */
@@ -624,9 +658,10 @@ function rubyWithGloss(surf, reading, gloss){
 function rubyFor(tk){
   const surf = tk.surface_form;
   const g = GLOSS[surf];
-  if(g) return rubyWithGloss(surf, tk.reading || tk.pronunciation, g);
+  const man = readOf(surf);
+  if(g) return rubyWithGloss(surf, man || tk.reading || tk.pronunciation, g);
   if(!KANJI.test(surf)) return esc(surf);
-  return rubyWrap(surf, tk.reading || tk.pronunciation);
+  return rubyWrap(surf, man || tk.reading || tk.pronunciation);
 }
 async function annotatePlain(text){
   if(!text) return '';
@@ -649,7 +684,9 @@ async function annotate(text){
   while((m = RUBY_PAREN.exec(text))){
     if(m.index > last) out += await annotatePlain(text.slice(last, m.index));
     const gg = GLOSS[m[1]];
-    out += gg ? rubyWithGloss(m[1], m[2], gg) : rubyWrap(m[1], m[2]);
+    /* 人工注音优先于歌词里作者自己写的读音，否则「改了这句却不变」 */
+    const rd = readOf(m[1]) || m[2];
+    out += gg ? rubyWithGloss(m[1], rd, gg) : rubyWrap(m[1], rd);
     last = m.index + m[0].length;
   }
   if(!last) return await annotatePlain(text);
@@ -673,13 +710,18 @@ async function wordsOf(text){
   else if(last < text.length) segs.push({ plain: text.slice(last) });
 
   for(const sg of segs){
-    if(sg.surf){ out.push({ t: sg.surf, r: sg.read }); continue; }
+    if(sg.surf){
+      const man = readOf(sg.surf);
+      out.push({ t: sg.surf, r: man || sg.read, a: sg.read, m: man ? 1 : 0 });
+      continue;
+    }
     let tks;
     try{ tks = mergeTokens(await tokenizeText(sg.plain)); }catch(e){ tks = [{ surface_form: sg.plain }]; }
     for(const tk of tks){
-      let r = tk.reading || tk.pronunciation || '';
-      if(r && r !== '*') r = kata2hira(r); else r = '';
-      out.push({ t: tk.surface_form, r });
+      let a = tk.reading || tk.pronunciation || '';
+      if(a && a !== '*') a = kata2hira(a); else a = '';
+      const man = readOf(tk.surface_form);
+      out.push({ t: tk.surface_form, r: man || a, a: a, m: man ? 1 : 0 });
     }
   }
   return out;
@@ -712,13 +754,18 @@ async function openWords(i){
 }
 
 function setWsMode(m){
+  if(wsMode !== m) wsPick = '';
   wsMode = m;
   $('#wsTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.getAttribute('data-t') === m));
   $('#wsHint').textContent = m === 'copy'
     ? '点一个词 = 复制它（只有原文，不带假名）。假名给你看，不进剪贴板。'
-    : '点一个词 → 在下面填中文释义。存下后正文里以赭橙色小字标出；按词形保存，别的歌里同一个词自动带上。';
+    : m === 'read'
+      ? '点一个词 → 在下面填假名。存下后正文的注音就按你填的显示；按词形保存，别的歌里同一个词自动带上。'
+      : '点一个词 → 在下面填中文释义。存下后正文里以赭橙色小字标出；按词形保存，别的歌里同一个词自动带上。';
   $('#glRow').classList.toggle('hidden', m !== 'gloss');
-  renderWsWords();
+  $('#rdRow').classList.toggle('hidden', m !== 'read');
+  /* 分词是异步的，等它出来再填注音行，否则「自动读音」会是空的 */
+  renderWsWords().then(() => { if(wsMode === 'read') paintRd(); });
 }
 
 async function renderWsWords(){
@@ -736,11 +783,22 @@ async function renderWsWords(){
     b.className = 'wchip' + (wsPick && wsPick === w.t ? ' sel' : '');
     b.innerHTML = '<span class="wt"></span><span class="wr"></span><span class="wd"></span>';
     b.querySelector('.wt').textContent = w.t;
-    b.querySelector('.wr').textContent = (w.r && w.r !== w.t) ? w.r : '';
+    const wr = b.querySelector('.wr');
+    wr.textContent = (w.r && w.r !== w.t) ? w.r : '';
+    if(w.m) wr.classList.add('man');
     b.querySelector('.wd').textContent = GLOSS[w.t] || '';
     b.onclick = () => onWordTap(w);
     box.appendChild(b);
   }
+}
+
+/* 注音行：左边词形、右边显示自动读音，输入框填人工读音 */
+function paintRd(){
+  const ln = lines[wsIdx];
+  const w = ln && ln.words ? ln.words.find(x => x.t === wsPick) : null;
+  $('#rdWord').textContent = wsPick || '选一个词';
+  $('#rdAuto').textContent = w ? ('自动 ' + (w.a || '无')) : '';
+  $('#rdInput').value = wsPick ? readOf(wsPick) : '';
 }
 
 function onWordTap(w){
@@ -749,20 +807,25 @@ function onWordTap(w){
     return;
   }
   wsPick = w.t;
+  renderWsWords();
+  if(wsMode === 'read'){
+    paintRd();
+    $('#rdInput').focus();
+    return;
+  }
   $('#glWord').textContent = w.t;
   $('#glInput').value = GLOSS[w.t] || '';
-  renderWsWords();
   $('#glInput').focus();
 }
 
-/* 释义改了要重排当前这首，让正文里的赭橙小字跟着变 */
+/* 释义/注音改了都要重排当前这首，让正文跟着变 */
 async function refreshGloss(){
   if(!cur || !cur.rec) return;
   const f = follow;
   follow = false;
   try{ await buildLines(); }catch(e){}
   follow = f;
-  if(wsIdx >= 0) renderWsWords();
+  if(wsIdx >= 0){ await renderWsWords(); if(wsMode === 'read') paintRd(); }
 }
 
 /* ================= 歌词解析 ================= */
@@ -2127,14 +2190,43 @@ async function runDemo(){
     await refreshGloss();
   };
 
+  /* 人工注音：只收平假名（片假名自动转，长音符ー保留），其余字符一律丢掉 */
+  const cleanKana = s => kata2hira(String(s || '')).replace(/\s+/g, '').replace(/[^\u3041-\u3096\u30fc]/g, '');
+  $('#rdSave').onclick = async () => {
+    if(!wsPick){ toast('先在上面的词里点一个'); return; }
+    const raw = $('#rdInput').value.trim();
+    const v = cleanKana(raw);
+    if(raw && !v){ toast('这里只能填假名，比如 さく'); return; }
+    if(v) READ[wsPick] = v; else delete READ[wsPick];
+    await DB.set('read', READ).catch(()=>{});
+    toast(v ? ('已注音 ' + wsPick + ' → ' + v) : ('已恢复自动注音 ' + wsPick));
+    $('#rdInput').value = v;
+    await refreshGloss();
+  };
+  $('#rdDel').onclick = async () => {
+    if(!wsPick) return;
+    delete READ[wsPick];
+    $('#rdInput').value = '';
+    await DB.set('read', READ).catch(()=>{});
+    toast('已恢复自动注音 ' + wsPick);
+    await refreshGloss();
+  };
+  $('#rdInput').addEventListener('keydown', ev => {
+    if(ev.key === 'Enter'){ ev.preventDefault(); $('#rdSave').click(); }
+  });
+  $('#glInput').addEventListener('keydown', ev => {
+    if(ev.key === 'Enter'){ ev.preventDefault(); $('#glSave').click(); }
+  });
+
   $('#btnTr').onclick = () => {
     applyAllTr(!allTr);
     DB.set('allTr', allTr).catch(()=>{});
   };
 
-  /* 生词表、「全部译文」开关都要在第一次渲染歌词之前就位，否则第一首不生效 */
+  /* 生词表、人工注音表、「全部译文」开关都要在第一次渲染歌词之前就位，否则第一首不生效 */
   try{
     await loadGloss();
+    await loadRead();
     const savedTr = await DB.get('allTr');
     if(savedTr) allTr = true;
     const tb = $('#btnTr');
