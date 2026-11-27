@@ -110,9 +110,18 @@ body.timing .line .tk{visibility:hidden}
 .line.pending::after{content:"";position:absolute;left:12px;right:14px;bottom:3px;height:2px;background:repeating-linear-gradient(90deg,var(--accent) 0 5px,transparent 5px 10px);opacity:.5}
 .line ruby{ruby-align:center}
 .line ruby rt{font-size:.52em;color:var(--accent);letter-spacing:0;font-weight:400;user-select:none;-webkit-user-select:none;pointer-events:none}
-/* 生词释义：赭橙色上标小字，和蓝色假名区分；不进剪贴板 */
-.line .gl{font-size:.55em;color:#B4643C;vertical-align:super;line-height:0;letter-spacing:0;margin-left:1px;user-select:none;-webkit-user-select:none;pointer-events:none}
-body.nogloss .line .gl{display:none}
+/* 生词释义：放在词下方，注音占上方，两边各一层，互不打架；
+   不占正文宽度、不进剪贴板 */
+.line .hg{position:relative}
+.line .hg::before{
+  content:attr(data-g);position:absolute;left:50%;transform:translateX(-50%);
+  top:calc(100% + .16em);
+  font-size:.46em;color:#B4643C;line-height:1;letter-spacing:0;white-space:nowrap;
+  pointer-events:none;user-select:none;-webkit-user-select:none;
+}
+.line.hasgl .jp{line-height:2.62}
+body.nogloss .line .hg::before{display:none}
+body.nogloss .line.hasgl .jp{line-height:2.05}
 body.timing .line:active{background:var(--accent-soft)}
 
 .fab{position:absolute;right:14px;bottom:calc(var(--safe-b) + 148px);font-size:11px;padding:8px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);z-index:5;box-shadow:0 3px 12px rgba(27,26,23,.08)}
@@ -227,10 +236,10 @@ input[type=text]::placeholder{color:var(--faint)}
       <button class="navbtn" id="btnNext" aria-label="下一首"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M5 5.5v13L14.5 12z" fill="currentColor"/><rect x="16.7" y="5" width="2.3" height="14" rx="0.9" fill="currentColor"/></svg></button>
     </div>
     <div class="tools">
+      <button class="tbtn" id="btnTr">译</button>
       <button class="tbtn" id="btnDic">音</button>
       <button class="tbtn" id="btnLyric">词</button>
       <button class="tbtn" id="btnNet">轴</button>
-      <button class="tbtn" id="btnTr">译</button>
       <span class="sp"></span>
       <button class="pill" id="btnRate">1×</button>
       <button class="pill" id="btnLoop">单句</button>
@@ -342,7 +351,7 @@ const au = $('#au');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const KANA = /[\u3040-\u309F\u30A0-\u30FF]/;
 const KANJI = /[\u4E00-\u9FFF\u3005\u3006\u3400-\u4DBF]/;
-const AUDIO_EXT = /\.(mp3|flac|m4a|aac|ogg|oga|opus|wav|weba)$/i;
+const AUDIO_EXT = /\.(mp3|flac|m4a|aac|ogg|oga|opus|wav|weba|ncm)$/i;
 
 let toastTimer;
 function toast(msg, ms){
@@ -603,15 +612,21 @@ async function loadGloss(){
   const g = await DB.get('gloss').catch(()=>null);
   GLOSS = (g && typeof g === 'object') ? g : {};
 }
-function glossOf(surf){
-  const g = GLOSS[surf];
-  return g ? '<span class="gl">' + esc(g) + '</span>' : '';
+/* 有释义的词：假名照旧交给 ruby，释义另画一层浮在假名上方，
+   不再像早先那样把中文挂在词后面把整行撑宽 */
+function rubyWithGloss(surf, reading, gloss){
+  let rd = (!reading || reading === '*') ? '' : kata2hira(reading);
+  if(rd === surf) rd = '';
+  const inner = rd ? '<ruby>' + esc(surf) + '<rt>' + esc(rd) + '</rt></ruby>' : esc(surf);
+  return '<span class="hg" data-g="' + esc(gloss) + '">' + inner + '</span>';
 }
 
 function rubyFor(tk){
   const surf = tk.surface_form;
-  if(!KANJI.test(surf)) return esc(surf) + glossOf(surf);
-  return rubyWrap(surf, tk.reading || tk.pronunciation) + glossOf(surf);
+  const g = GLOSS[surf];
+  if(g) return rubyWithGloss(surf, tk.reading || tk.pronunciation, g);
+  if(!KANJI.test(surf)) return esc(surf);
+  return rubyWrap(surf, tk.reading || tk.pronunciation);
 }
 async function annotatePlain(text){
   if(!text) return '';
@@ -633,7 +648,8 @@ async function annotate(text){
   let out = '', last = 0, m;
   while((m = RUBY_PAREN.exec(text))){
     if(m.index > last) out += await annotatePlain(text.slice(last, m.index));
-    out += rubyWrap(m[1], m[2]) + glossOf(m[1]);
+    const gg = GLOSS[m[1]];
+    out += gg ? rubyWithGloss(m[1], m[2], gg) : rubyWrap(m[1], m[2]);
     last = m.index + m[0].length;
   }
   if(!last) return await annotatePlain(text);
@@ -937,6 +953,125 @@ function prettyName(fn){
   return { title: s, artist: '' };
 }
 
+/* ================= 网易云 .ncm 解密 ================= */
+/* 全部在本地做，音频不出手机；解出的 blob 不落盘，随 objectURL 一起回收。
+   格式依据 taurusxin/ncmdump 1.5.1（src/ncmcrypt.cpp），已用其 test.ncm 实测通过。
+   Web Crypto 不支持 ECB，所以 AES-128 自己实现（每首只解 1~3 个块，开销可忽略）。 */
+const NCM_GF = (a, b) => { let p = 0; for(let i = 0; i < 8; i++){ if(b & 1) p ^= a; const hi = a & 0x80; a = (a << 1) & 0xff; if(hi) a ^= 0x1b; b >>= 1; } return p; };
+const NCM_SB = (() => {
+  const sb = new Uint8Array(256), ib = new Uint8Array(256);
+  for(let i = 0; i < 256; i++){
+    let m = 0;
+    if(i){ for(let j = 1; j < 256; j++){ if(NCM_GF(i, j) === 1){ m = j; break; } } }
+    const x = m, rol = n => ((x << n) | (x >> (8 - n))) & 0xff;
+    sb[i] = (x ^ rol(1) ^ rol(2) ^ rol(3) ^ rol(4) ^ 0x63) & 0xff;
+  }
+  for(let i = 0; i < 256; i++) ib[sb[i]] = i;
+  return { sb, ib };
+})();
+function ncmKeys(key){
+  const w = new Uint8Array(176); w.set(key, 0);
+  const rc = [1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36], sb = NCM_SB.sb;
+  for(let i = 4; i < 44; i++){
+    let t = [w[(i - 1) * 4], w[(i - 1) * 4 + 1], w[(i - 1) * 4 + 2], w[(i - 1) * 4 + 3]];
+    if(i % 4 === 0) t = [sb[t[1]] ^ rc[i / 4 - 1], sb[t[2]], sb[t[3]], sb[t[0]]];
+    for(let k = 0; k < 4; k++) w[i * 4 + k] = w[(i - 4) * 4 + k] ^ t[k];
+  }
+  return w;
+}
+function ncmEcb(key, src){
+  const w = ncmKeys(key), n = src.length >> 4, out = new Uint8Array(n * 16), ib = NCM_SB.ib;
+  for(let b = 0; b < n; b++){
+    const s = new Uint8Array(16), so = b * 16;
+    for(let i = 0; i < 16; i++) s[i] = src[so + i] ^ w[160 + i];
+    for(let round = 9; round >= 0; round--){
+      const g = new Uint8Array(16);
+      for(let c = 0; c < 4; c++) for(let r = 0; r < 4; r++) g[c * 4 + r] = ib[s[(((c - r + 4) & 3) * 4) + r]];
+      for(let i = 0; i < 16; i++) s[i] = g[i] ^ w[round * 16 + i];
+      if(round > 0) for(let c = 0; c < 4; c++){
+        const a0 = s[c * 4], a1 = s[c * 4 + 1], a2 = s[c * 4 + 2], a3 = s[c * 4 + 3];
+        s[c * 4]     = NCM_GF(a0, 14) ^ NCM_GF(a1, 11) ^ NCM_GF(a2, 13) ^ NCM_GF(a3, 9);
+        s[c * 4 + 1] = NCM_GF(a0, 9)  ^ NCM_GF(a1, 14) ^ NCM_GF(a2, 11) ^ NCM_GF(a3, 13);
+        s[c * 4 + 2] = NCM_GF(a0, 13) ^ NCM_GF(a1, 9)  ^ NCM_GF(a2, 14) ^ NCM_GF(a3, 11);
+        s[c * 4 + 3] = NCM_GF(a0, 11) ^ NCM_GF(a1, 13) ^ NCM_GF(a2, 9)  ^ NCM_GF(a3, 14);
+      }
+    }
+    out.set(s, so);
+  }
+  const pad = n ? out[n * 16 - 1] : 0;
+  return (pad >= 1 && pad <= 16) ? out.subarray(0, n * 16 - pad) : out;
+}
+const NCM_CK = new Uint8Array([104, 122, 72, 82, 65, 109, 115, 111, 53, 107, 73, 110, 98, 97, 120, 87]);
+const NCM_MK = new Uint8Array([35, 49, 52, 108, 106, 107, 95, 33, 92, 93, 38, 48, 85, 60, 39, 40]);
+const NCM_MAGIC = [67, 84, 69, 78, 70, 68, 65, 77]; /* CTENFDAM */
+function isNcm(u8){
+  if(u8.length < 16) return false;
+  for(let i = 0; i < 8; i++) if(u8[i] !== NCM_MAGIC[i]) return false;
+  return true;
+}
+function ncmDecode(u8){
+  if(!isNcm(u8)) throw new Error('不是 ncm 文件');
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let p = 10;
+  const kl = dv.getUint32(p, true); p += 4;
+  if(!kl || kl > 0x10000 || p + kl > u8.length) throw new Error('密钥区异常');
+  const raw = u8.slice(p, p + kl);
+  for(let i = 0; i < raw.length; i++) raw[i] ^= 0x64;
+  p += kl;
+  const kp = ncmEcb(NCM_CK, raw);
+  if(kp.length <= 17) throw new Error('密钥解密失败');
+  const box = new Uint8Array(256);
+  for(let i = 0; i < 256; i++) box[i] = i;
+  for(let i = 0, last = 0, ko = 0; i < 256; i++){
+    const sw = box[i], c = (sw + last + kp[17 + ko++]) & 0xff;
+    if(ko >= kp.length - 17) ko = 0;
+    box[i] = box[c]; box[c] = sw; last = c;
+  }
+  let meta = null;
+  const ml = dv.getUint32(p, true); p += 4;
+  if(ml > 0 && p + ml <= u8.length){
+    const m = u8.slice(p, p + ml);
+    for(let i = 0; i < m.length; i++) m[i] ^= 0x63;
+    p += ml;
+    try{
+      const b64 = new TextDecoder().decode(m.subarray(22));
+      const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+      meta = JSON.parse(new TextDecoder().decode(ncmEcb(NCM_MK, bin).subarray(6)));
+    }catch(e){ meta = null; }
+  }
+  p += 5;
+  const cfl = dv.getUint32(p, true); p += 4;
+  const il = dv.getUint32(p, true); p += 4;
+  let cover = null;
+  if(il > 0 && p + il <= u8.length) cover = u8.slice(p, p + il);
+  p += il + (cfl - il);
+  if(p >= u8.length) throw new Error('音频区为空');
+  /* 密钥流只跟 i mod 256 有关，预先把 256 字节算好，比逐字节查表快一个数量级 */
+  const ks = new Uint8Array(256);
+  for(let i = 0; i < 256; i++){
+    const j = (i + 1) & 0xff;
+    ks[i] = box[(box[j] + box[(box[j] + j) & 0xff]) & 0xff];
+  }
+  const audio = u8.slice(p);
+  for(let i = 0; i < audio.length; i++) audio[i] ^= ks[i & 0xff];
+  let fmt = 'bin';
+  if(audio[0] === 0x49 && audio[1] === 0x44 && audio[2] === 0x33) fmt = 'mp3';
+  else if(audio[0] === 0x66 && audio[1] === 0x4c && audio[2] === 0x61 && audio[3] === 0x43) fmt = 'flac';
+  else if(audio[4] === 0x66 && audio[5] === 0x74 && audio[6] === 0x79 && audio[7] === 0x70) fmt = 'm4a';
+  return { format: fmt, audio, meta, cover };
+}
+
+const IS_NCM = /\.ncm$/i;
+let ncmMemo = { name: '', blob: null, meta: null };
+async function ncmAsPlayable(file, name){
+  if(ncmMemo.name === name && ncmMemo.blob) return ncmMemo;
+  const r = ncmDecode(new Uint8Array(await file.arrayBuffer()));
+  if(r.format === 'bin') throw new Error('解出来后不是已知音频格式');
+  const type = r.format === 'mp3' ? 'audio/mpeg' : r.format === 'flac' ? 'audio/flac' : 'audio/mp4';
+  ncmMemo = { name, blob: new Blob([r.audio], { type }), meta: r.meta };
+  return ncmMemo;
+}
+
 /* ================= 环境自检（只在原型里） ================= */
 const env = { ver: 0, hasDir: false, standalone: false };
 function detectEnv(){
@@ -993,7 +1128,7 @@ async function pickDir(){
 
 async function pickFiles(){
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.multiple = true; inp.accept = 'audio/*';
+  inp.type = 'file'; inp.multiple = true; inp.accept = 'audio/*,.ncm';
   inp.onchange = () => {
     songs = [...inp.files].filter(f => AUDIO_EXT.test(f.name)).map(f => ({ name: f.name, getFile: async () => f }));
     renderList();
@@ -1004,10 +1139,29 @@ async function pickFiles(){
 
 async function scanDir(){
   songs = [];
+  const used = new Set();
+  /* 递归往下翻：网易云歌放在 Download/netease/cloudmusic/Music 这种多层目录里，
+     只扫一层的话选 Download 就会是空歌单。深度限 3、跳过隐藏目录、总数封顶 3000。 */
+  async function walk(dir, depth, prefix){
+    if(songs.length >= 3000) return;
+    try{
+      for await (const [name, h] of dir.entries()){
+        if(songs.length >= 3000) return;
+        if(name.startsWith('.')) continue;
+        if(h.kind === 'file'){
+          if(!AUDIO_EXT.test(name)) continue;
+          let disp = name;
+          if(used.has(disp)) disp = prefix ? prefix + '/' + name : name;
+          used.add(disp);
+          songs.push({ name: disp, getFile: () => h.getFile() });
+        }else if(depth < 3){
+          await walk(h, depth + 1, prefix ? prefix + '/' + name : name);
+        }
+      }
+    }catch(e){ /* 某个子目录读不了就跳过，不影响别的 */ }
+  }
   try{
-    for await (const [name, h] of dirHandle.entries()){
-      if(h.kind === 'file' && AUDIO_EXT.test(name)) songs.push({ name, getFile: () => h.getFile() });
-    }
+    await walk(dirHandle, 0, '');
   }catch(e){
     toast('读取文件夹失败：' + (e.message || e));
   }
@@ -1019,7 +1173,7 @@ function renderList(){
   const box = $('#songs');
   paintQ();
   if(!songs.length){
-    box.innerHTML = '<div class="empty">这个文件夹里没找到音频文件。<br>支持 mp3 / flac / m4a / aac / ogg / wav。</div>';
+    box.innerHTML = '<div class="empty">这个文件夹里没找到音频文件。<br>支持 mp3 / flac / m4a / aac / ogg / wav / ncm。<br><br>歌可能藏在更深一层，比如网易云的<br>Download/netease/cloudmusic/Music —— 再选一次到那一层试试。</div>';
     return;
   }
   box.innerHTML = '';
@@ -1073,6 +1227,20 @@ async function openSong(i, opts){
     return;
   }
   DB.set('last', { name: s.name }).catch(()=>{});
+
+  /* 网易云下载的 .ncm：本地解成普通音频再喂给播放器 */
+  if(IS_NCM.test(s.name)){
+    if(ncmMemo.name !== s.name) toast('正在解密 ncm…');
+    try{
+      const got = await ncmAsPlayable(file, s.name);
+      file = got.blob;
+      if(got.meta && got.meta.musicName) $('#pTitle').textContent = got.meta.musicName;
+    }catch(e){
+      $('#lyrics').innerHTML = '<div class="empty">这个 ncm 解不开：' + esc(e.message || e) + '<br>换 mp3/flac 试试</div>';
+      toast('ncm 解密失败');
+      return;
+    }
+  }
 
   /* 只有恢复上次那首才取位置；其余入口直接 0 */
   pendingPos = auto ? ((await DB.get('pos:' + s.name)) || 0) : 0;
@@ -1157,9 +1325,11 @@ function renderLyrics(){
   const frag = document.createDocumentFragment();
   lines.forEach((ln, i) => {
     const el = document.createElement('div');
-    el.className = 'line' + (allTr ? ' open' : '');
+    const jp = ln.html || esc(ln.jp);
+    /* 有释义的行注音要占两行，单独给一个更大的行距，免得压到上一行 */
+    el.className = 'line' + (allTr ? ' open' : '') + (jp.indexOf('data-g="') >= 0 ? ' hasgl' : '');
     el.dataset.i = i;
-    el.innerHTML = '<button class="tk" aria-label="从这句开始播"></button><div class="body"><div class="jp">' + (ln.html || esc(ln.jp)) + '</div>' +
+    el.innerHTML = '<button class="tk" aria-label="从这句开始播"></button><div class="body"><div class="jp">' + jp + '</div>' +
       (ln.zh ? '<div class="tr"><div class="trc"><div class="tri">' + esc(ln.zh) + '</div></div></div>' : '') + '</div>';
     el.onclick = () => onLineTap(i, el);
     /* 行首三角：从这句播。以前这个位置只是装饰，点了会穿透到句子上去展开译文 */
@@ -1817,6 +1987,32 @@ async function runDemo(){
   $('#list').classList.add('hidden');
   $('#player').classList.remove('hidden');
   cur.rec = { hasTs: false, manual: {}, entries: demo.map(d => ({ t: null, jp: d[0], zh: d[1] })) };
+
+  /* ?demo&noengine：不经过分词/词典，注音写死，用来单看排版（无头环境 Worker 起不来） */
+  if(location.search.indexOf('noengine') >= 0){
+    const hard = {
+      '夜明けの風が　窓を叩く': '<ruby>夜明け<rt>よあけ</rt></ruby>の<span class="hg" data-g="风"><ruby>風<rt>かぜ</rt></ruby></span>が　<span class="hg" data-g="窗户"><ruby>窓<rt>まど</rt></ruby></span>を<ruby>叩く<rt>たたく</rt></ruby>',
+      'まだ眠い目を　こすりながら': 'まだ<span class="hg" data-g="困倦的"><ruby>眠い<rt>ねむい</rt></ruby></span><span class="hg" data-g="眼睛"><ruby>目<rt>め</rt></ruby></span>を　こすりながら',
+      '昨日の言葉が　胸に残って': '<span class="hg" data-g="昨天"><ruby>昨日<rt>きのう</rt></ruby></span>の<span class="hg" data-g="话语"><ruby>言葉<rt>ことば</rt></ruby></span>が　<span class="hg" data-g="胸口"><ruby>胸<rt>むね</rt></ruby></span>に<ruby>残って<rt>のこって</rt></ruby>',
+      '一人で大人になった気がした': '一人で<span class="hg" data-g="大人"><ruby>大人<rt>おとな</rt></ruby></span>になった<ruby>気<rt>き</rt></ruby>がした',
+      '歩き出すよ　この街の向こうへ': '<ruby>歩き出す<rt>あるきだす</rt></ruby>よ　この<span class="hg" data-g="街道"><ruby>街<rt>まち</rt></ruby></span>のむこうへ',
+      '約束なんて　要らないから': '<span class="hg" data-g="约定"><ruby>約束<rt>やくそく</rt></ruby></span>なんて　<span class="hg" data-g="不需要"><ruby>要らない<rt>いらない</rt></ruby></span>から',
+      'ただ君の声を　覚えていたい': 'ただ<span class="hg" data-g="你"><ruby>君<rt>きみ</rt></ruby></span>の<span class="hg" data-g="声音"><ruby>声<rt>こえ</rt></ruby></span>を　<ruby>覚えて<rt>おぼえて</rt></ruby>いたい'
+    };
+    lines = demo.map((d, i) => ({ t: i * 9, jp: d[0], zh: d[1], html: hard[d[0]] || esc(d[0]) }));
+    curIdx = 2;
+    renderLyrics();
+    paintCur();
+    if(lines[2] && lines[2].el) lines[2].el.classList.add('open');
+    /* ?w390：无头截图窗口有最小宽度，套一个 390px 的框看真机换行 */
+    if(location.search.indexOf('w390') >= 0){
+      const p = document.getElementById('player');
+      p.style.width = '390px'; p.style.left = '0'; p.style.right = 'auto';
+      p.style.outline = '1px dashed #c8c4bb';
+    }
+    return;
+  }
+
   await buildLines();
   if(lines[2] && lines[2].el) lines[2].el.classList.add('open');
   curIdx = 1; paintCur();
