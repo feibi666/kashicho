@@ -628,23 +628,41 @@ function rubyWrap(surf, reading){
 }
 
 /* ================= 生词释义 / 人工注音 ================= */
-/* 两者都按「词形」存，不按歌存：{ "咲く": "开花" } / { "咲く": "さく" }
-   标一次，别的歌里同一个词自动带上 */
+/* 释义按「词形」全局存：{ "咲く": "开花" }，标一次别的歌也能用 */
 let GLOSS = {};
 async function loadGloss(){
   const g = await DB.get('gloss').catch(()=>null);
   GLOSS = (g && typeof g === 'object') ? g : {};
 }
 
-/* 人工注音：优先级高于分词器给的读音。key 是词形，value 是纯平假名 */
-let READ = {};
-async function loadRead(){
-  const r = await DB.get('read').catch(()=>null);
-  READ = (r && typeof r === 'object') ? r : {};
-}
+/* 人工注音跟着歌走：存在这首歌自己的歌词记录里 cur.rec.read = { 词形: 假名 }。
+   多音词在不同歌里读音不同（咲く 有的唱 さく、有的唱 えむ），按词形全局存会串味，
+   所以不共用、只归本歌。优先级高于分词器给的读音。 */
 function readOf(surf){
-  const v = READ[surf];
+  const m = cur && cur.rec && cur.rec.read;
+  const v = m && m[surf];
   return (typeof v === 'string' && v.trim()) ? v.trim() : '';
+}
+/* 写/删都直接落到这首歌的记录上，返回是否写进存储 */
+async function setRead(surf, v){
+  if(!cur || !cur.rec) return false;
+  const m = cur.rec.read || (cur.rec.read = {});
+  if(v) m[surf] = v; else delete m[surf];
+  if(!Object.keys(m).length) delete cur.rec.read;
+  return await persistRec();
+}
+
+/* 旧版本把注音按词形存成一张全局表，多音词会串味，已作废。
+   原数据不删，改名留档，必要时可在控制台 DB.get('read_legacy') 里翻 */
+async function retireLegacyRead(){
+  try{
+    const old = await DB.get('read').catch(()=>null);
+    if(old && typeof old === 'object' && Object.keys(old).length){
+      await DB.set('read_legacy', old).catch(()=>{});
+      await DB.del('read').catch(()=>{});
+      setTimeout(() => toast('注音改为按歌保存了：旧的全局注音不再生效（原数据留档在 read_legacy），需要在这首歌里重标一次', 4200), 1200);
+    }
+  }catch(e){}
 }
 /* 有释义的词：假名照旧交给 ruby，释义另画一层浮在假名上方，
    不再像早先那样把中文挂在词后面把整行撑宽 */
@@ -760,8 +778,8 @@ function setWsMode(m){
   $('#wsHint').textContent = m === 'copy'
     ? '点一个词 = 复制它（只有原文，不带假名）。假名给你看，不进剪贴板。'
     : m === 'read'
-      ? '点一个词 → 在下面填假名。存下后正文的注音就按你填的显示；按词形保存，别的歌里同一个词自动带上。'
-      : '点一个词 → 在下面填中文释义。存下后正文里以赭橙色小字标出；按词形保存，别的歌里同一个词自动带上。';
+      ? '点一个词 → 在下面填假名。读音只存给「这首歌」，换首歌唱法不同可以另填，互不影响。'
+      : '点一个词 → 在下面填中文释义。释义按词形存，所有歌通用。';
   $('#glRow').classList.toggle('hidden', m !== 'gloss');
   $('#rdRow').classList.toggle('hidden', m !== 'read');
   /* 分词是异步的，等它出来再填注音行，否则「自动读音」会是空的 */
@@ -1267,6 +1285,10 @@ async function openSong(i, opts){
   follow = true;
   $('#lyrics').scrollTop = 0;
   lines = []; curIdx = -1; loopIdx = -1; loopOn = false; $('#btnLoop').classList.remove('act');
+  /* 查词面板还开着的话，它记的是上一首的行号；切歌后必须清掉，
+     否则接着点「注音/释义」会把词写到新歌头上 */
+  wsIdx = -1; wsPick = '';
+  $('#wordSheet').classList.add('hidden');
   setTiming(false);
   if(queue.length !== songs.length) rebuildQueue(i);
   qi = Math.max(0, queue.indexOf(i));
@@ -1897,6 +1919,8 @@ $('#btnSave').onclick = async () => {
       manual: keep ? prev.manual : {}, dict: prev.dict || '',
       net: prev.net || '', netTl: prev.netTl || '', autoT: []
     };
+    /* 人工注音属于这首歌，重贴歌词（改错字/换翻译）不该把标好的读音弄丢 */
+    if(prev.read && Object.keys(prev.read).length) cur.rec.read = prev.read;
     /* 之前取过网易云的，重新贴歌词后要再对一次时间轴，顺便补回译文 */
     let hit = 0, filled = 0;
     if(cur.rec.net){
@@ -2049,10 +2073,12 @@ async function applyNet(id){
 
   const entries = got.lrc.map(l => ({ t: l.t, jp: l.txt, zh: '' }));
   const m = fillZh(entries, tl);
+  const prev0 = cur.rec || {};
   cur.rec = {
     entries: entries,
-    hasTs: true, manual: {}, dict: '', net: got.raw, netTl: tl, autoT: []
+    hasTs: true, manual: {}, dict: prev0.dict || '', net: got.raw, netTl: tl, autoT: []
   };
+  if(prev0.read && Object.keys(prev0.read).length) cur.rec.read = prev0.read;
   await persistRec();
   await buildLines();
   return { ok: true, msg: '取到 ' + got.lrc.length + ' 句时间轴' + (m ? '、' + m + ' 句译文' : noTl) };
@@ -2194,21 +2220,21 @@ async function runDemo(){
   const cleanKana = s => kata2hira(String(s || '')).replace(/\s+/g, '').replace(/[^\u3041-\u3096\u30fc]/g, '');
   $('#rdSave').onclick = async () => {
     if(!wsPick){ toast('先在上面的词里点一个'); return; }
+    if(!cur || !cur.rec){ toast('这首歌还没有歌词，先贴歌词'); return; }
     const raw = $('#rdInput').value.trim();
     const v = cleanKana(raw);
     if(raw && !v){ toast('这里只能填假名，比如 さく'); return; }
-    if(v) READ[wsPick] = v; else delete READ[wsPick];
-    await DB.set('read', READ).catch(()=>{});
-    toast(v ? ('已注音 ' + wsPick + ' → ' + v) : ('已恢复自动注音 ' + wsPick));
+    await setRead(wsPick, v);
+    toast(v ? ('本歌已注音 ' + wsPick + ' → ' + v) : ('已恢复自动注音 ' + wsPick));
     $('#rdInput').value = v;
     await refreshGloss();
   };
   $('#rdDel').onclick = async () => {
     if(!wsPick) return;
-    delete READ[wsPick];
+    if(!cur || !cur.rec) return;
+    await setRead(wsPick, '');
     $('#rdInput').value = '';
-    await DB.set('read', READ).catch(()=>{});
-    toast('已恢复自动注音 ' + wsPick);
+    toast('本歌已恢复自动注音 ' + wsPick);
     await refreshGloss();
   };
   $('#rdInput').addEventListener('keydown', ev => {
@@ -2223,10 +2249,10 @@ async function runDemo(){
     DB.set('allTr', allTr).catch(()=>{});
   };
 
-  /* 生词表、人工注音表、「全部译文」开关都要在第一次渲染歌词之前就位，否则第一首不生效 */
+  /* 生词表、旧注音表、「全部译文」开关都要在第一次渲染歌词之前就位，否则第一首不生效 */
   try{
     await loadGloss();
-    await loadRead();
+    await retireLegacyRead();
     const savedTr = await DB.get('allTr');
     if(savedTr) allTr = true;
     const tb = $('#btnTr');
