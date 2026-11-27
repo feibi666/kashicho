@@ -327,8 +327,8 @@ input[type=text]::placeholder{color:var(--faint)}
 
 <div class="sheet hidden" id="ntSheet">
   <div class="inner">
-    <h2>从网易云取时间轴</h2>
-    <div class="hint">在网易云里点「分享 → 复制链接」，把链接整段贴进来；链接里带 <code>id=数字</code> 就行，也可以直接填数字。</div>
+    <h2>从网易云取时间轴与译文</h2>
+    <div class="hint">在网易云里点「分享 → 复制链接」，把链接整段贴进来；链接里带 <code>id=数字</code> 就行，也可以直接填数字。<br>网易云上有这篇的译文就一起带过来，没有就只取时间轴。</div>
     <input type="text" id="ntInput" placeholder="https://music.163.com/song?id=1409311773" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div class="hint" id="ntStatus"></div>
     <div class="row">
@@ -1832,14 +1832,16 @@ $('#btnSave').onclick = async () => {
     cur.rec = {
       raw: raw, entries: parsed.entries, hasTs: parsed.hasTs,
       manual: keep ? prev.manual : {}, dict: prev.dict || '',
-      net: prev.net || '', autoT: []
+      net: prev.net || '', netTl: prev.netTl || '', autoT: []
     };
-    /* 之前取过网易云时间轴的，重新贴歌词后要再对一次 */
-    let hit = 0;
+    /* 之前取过网易云的，重新贴歌词后要再对一次时间轴，顺便补回译文 */
+    let hit = 0, filled = 0;
     if(cur.rec.net){
       const r = alignTimes(cur.rec.entries, parseNetLrc(cur.rec.net));
       cur.rec.autoT = r.times;
       hit = r.hit;
+      const tlPrev = Array.isArray(cur.rec.netTl) ? cur.rec.netTl : parseNetLrc(cur.rec.netTl || '');
+      filled = fillZh(cur.rec.entries, tlPrev, r.times);
     }
     await persistRec();
     await buildLines();
@@ -1849,7 +1851,7 @@ $('#btnSave').onclick = async () => {
     if(hit) src = '（网易云时间轴对上 ' + hit + '/' + n + ' 句）';
     else if(parsed.hasTs) src = '（用了歌词自带的时间轴）';
     else src = '（时间轴按句平均，可打点）';
-    toast('识别 ' + n + ' 句，' + m + ' 句有译文' + src, 3400);
+    toast('识别 ' + n + ' 句，' + m + ' 句有译文' + (filled ? '（补了 ' + filled + ' 句）' : '') + src, 3400);
   }catch(e){
     mask(false);
     toast('出错了：' + (e.message || e));
@@ -1892,36 +1894,120 @@ $('#btnNet').onclick = () => {
 };
 $('#ntCancel').onclick = () => $('#ntSheet').classList.add('hidden');
 
-async function fetchNetTimes(id){
-  const d = await jsonp('https://music.163.com/api/song/media?id=' + id);
-  return { lrc: parseNetLrc(d && d.lyric), raw: (d && d.lyric) || '' };
+/* ---------- 取网易云时间轴 + 译文 ----------
+   时间轴走 /api/song/media：认 callback，任何网络下都稳。
+   译文只在 /api/song/lyric 里，可这个接口既不返 CORS 头、也不认 callback，
+   静态页直接读不到，只能过一层中转。中转只转发「歌曲 id」这条公开信息。
+   默认的公共中转不稳，想稳就把 NET_RELAY 换成自己部署的 Worker（见 relay-worker.js）。 */
+const NET_RELAY = 'https://api.allorigins.win/raw?url=';
+const NET_RELAY_ALT = '';
+const netLyricUrl = id => 'https://music.163.com/api/song/lyric?id=' + id + '&lv=-1&kv=-1&tv=-1';
+
+/* 译文尽力而为：直连 → 中转。拿不到就返回空，绝不拖累时间轴 */
+async function fetchNetTl(id){
+  const target = netLyricUrl(id);
+  const grab = async (url, ms) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), ms);
+    try{
+      const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+      if(!r.ok) return null;
+      const txt = await r.text();
+      const i = txt.indexOf('{');
+      if(i < 0) return null;
+      const d = JSON.parse(txt.slice(i));
+      const raw = (d && d.tlyric && d.tlyric.lyric) || '';
+      return parseNetLrc(raw);
+    }catch(e){ return null; }
+    finally{ clearTimeout(timer); }
+  };
+  const direct = await grab(target, 3000);
+  if(direct) return { tl: direct, why: direct.length ? '' : 'none' };
+  for(const base of [NET_RELAY, NET_RELAY_ALT].filter(Boolean)){
+    const via = await grab(base + encodeURIComponent(target), 7000);
+    if(via) return { tl: via, why: via.length ? '' : 'none' };
+  }
+  return { tl: [], why: 'fail' };
 }
 
-/* 拿到时间轴后并进当前这首歌：有已贴歌词就按文本对齐，没有就直接用接口的原文 */
+/* 译文和原文时间戳一致，按时间取最近的一条，超过 0.6 秒就当没有 */
+function tlAt(tl, t){
+  if(!tl.length) return '';
+  let best = '', bd = Infinity;
+  for(const x of tl){
+    const d = Math.abs(x.t - t);
+    if(d < bd){ bd = d; best = x.txt; }
+  }
+  return bd <= 0.6 ? best : '';
+}
+
+/* 已经手写的译文不动，只补空的 */
+function fillZh(entries, tl, times){
+  if(!tl || !tl.length) return 0;
+  let n = 0;
+  entries.forEach((e, i) => {
+    if(e.zh) return;
+    const t = times ? times[i] : e.t;
+    if(t == null) return;
+    const s = tlAt(tl, t);
+    if(s){ e.zh = s; n++; }
+  });
+  return n;
+}
+
+/* 拿到时间轴后并进当前这首歌：有已贴歌词就按文本对齐，没有就直接用接口的原文。
+   译文另走一趟，不挡着用——这一步只负责时间轴。 */
 async function applyNet(id){
-  const { lrc, raw } = await fetchNetTimes(id);
+  const d = await jsonp('https://music.163.com/api/song/media?id=' + id);
+  const raw = (d && d.lyric) || '';
+  const lrc = parseNetLrc(raw);
   if(!lrc.length) return { ok: false, msg: '这首在网易云没有带时间轴的歌词' };
+
+  let msg;
   if(cur.rec && cur.rec.entries && cur.rec.entries.length){
     const r = alignTimes(cur.rec.entries, lrc);
     const n = cur.rec.entries.length;
     /* 一行都没对上，多半不是同一版歌词，宁可不动也别把时间轴搞乱 */
     if(!r.hit) return { ok: false, msg: '时间轴和这份歌词一行都没对上，可能取的不是同一版' };
     cur.rec.net = raw;
+    cur.rec.netTl = [];
     cur.rec.autoT = r.times;
     cur.rec.manual = cur.rec.manual || {};
-    let msg = '时间轴 ' + lrc.length + ' 行，对上 ' + r.hit + '/' + n + ' 句';
+    msg = '时间轴对上 ' + r.hit + '/' + n + ' 句';
     if(r.hit < n * 0.5) msg += '（对上的少，可能不是同一版歌词）';
-    await persistRec();
-    await buildLines();
-    return { ok: true, msg };
+  }else{
+    cur.rec = {
+      entries: lrc.map(l => ({ t: l.t, jp: l.txt, zh: '' })),
+      hasTs: true, manual: {}, dict: '', net: raw, netTl: [], autoT: []
+    };
+    msg = '取到 ' + lrc.length + ' 句时间轴';
   }
-  cur.rec = {
-    entries: lrc.map(l => ({ t: l.t, jp: l.txt, zh: '' })),
-    hasTs: true, manual: {}, dict: '', net: raw, autoT: []
-  };
   await persistRec();
   await buildLines();
-  return { ok: true, msg: '取到 ' + lrc.length + ' 句时间轴，还没有译文' };
+
+  /* 译文随后补，补不上也不影响已经能用的时间轴 */
+  const owner = cur;
+  fillTranslation(id, owner, raw);
+  return { ok: true, msg: msg + '，正在取译文…' };
+}
+
+/* 译文单独一趟：拿到再补一次，离开这首就不写回去 */
+async function fillTranslation(id, owner, raw){
+  const got = await fetchNetTl(id).catch(() => ({ tl: [], why: 'fail' }));
+  if(!cur || cur !== owner || !cur.rec) return;
+  const tl = got.tl || [];
+  if(!tl.length){
+    toast(got.why === 'none' ? '这首在网易云没有译文，只取了时间轴'
+      : '译文取不到（接口挡跨域），只取了时间轴', 3000);
+    return;
+  }
+  cur.rec.net = raw || cur.rec.net;
+  cur.rec.netTl = tl;
+  const times = cur.rec.autoT && cur.rec.autoT.some(x => x != null) ? cur.rec.autoT : null;
+  const n = fillZh(cur.rec.entries, tl, times);
+  await persistRec();
+  await buildLines();
+  toast(n ? '补上 ' + n + ' 句译文' : '译文有了，但这首没有空着的句子', 2800);
 }
 
 $('#ntGo').onclick = async () => {
