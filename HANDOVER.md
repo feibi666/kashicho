@@ -3,9 +3,10 @@
 > **新对话开场白**（复制这一句即可）：
 > `读 G:\WorkBuddy work\2026-11-26-19-46-28\kashicho\HANDOVER.md，继续维护 kashicho`
 >
-> 最后更新：2026-11-28 晚 · 对应提交 `6c673f6` · 线上 `SHELL v22` / `DICT v4` / Worker `?v=13`
+> 最后更新：2026-11-29 凌晨 · 对应提交 `edd08a0` · 线上 `SHELL v23` / `DICT v4` / Worker `?v=13`
 >
-> ⚠️ 这次改动**只在 `proto.html`**，`index.html` 还是 `26d4287` 的行为，等真机验证通过再同步（见 §6.1）。
+> ✅ v17–v22 那一批 proto 改动（居中跟随、屏幕常亮、只标汉字、释义点线、字典形释义、吸收闸门）
+> **已于 `edd08a0` 全部同步进 `index.html` 并上线**，正式版与原型业务代码逐字一致，差异只剩环境自检条。
 
 ---
 
@@ -17,7 +18,7 @@
 | 原型地址 | 同上换 `proto.html`，加 `?demo` 可无音频看排版 |
 | 仓库 | `https://github.com/feibi666/kashicho`（public，Pages 免费版必须公开） |
 | 本地目录 | `G:\WorkBuddy work\2026-11-26-19-46-28\kashicho\` |
-| 当前 HEAD | `f651943`（`SHELL v17`，改动在 proto，正式版待同步） |
+| 当前 HEAD | `edd08a0`（`SHELL v23`，正式版已含 v17–v22 全部改动） |
 | 改完发版 | 升 `SHELL` → 语法自检 → push（挂 Clash）→ 等 1 分钟 → 抓线上核对 |
 
 用户是唯一的真实用户，真机是安卓 Chrome。**助手改不了的部分**：文件夹授权、锁屏表现、后台保活，这些只能用户自己测。
@@ -265,7 +266,9 @@ Copy-Item proto.html index.html -Force
 
 然后补回三处：① `<title>歌詞帳 · 原型</title>` → `<title>歌詞帳</title>`；② 删 `#envbar` 那段 CSS（8 行）；③ 删 `<div id="envbar">` 并把 `renderEnv()` 换成只判断 `!env.hasDir` 的版本（照 `675b9ef` 抄）。
 
-验收：`git diff --no-index --stat proto.html index.html` 应约 8 insertions / 38 deletions。最后 bump `SHELL`。
+验收：`git diff --no-index --stat proto.html index.html` 应只剩环境自检条那点差异——`edd08a0` 当次是 **4 insertions / 32 deletions**（title 1、`#envbar` CSS 块 8、`<div id="envbar">` 1、`renderEnv()` 主体 21，换上正式版注释+toast 4 行）。若数字明显变大，说明业务代码又分叉了，先查清楚再推。
+
+再补三步防漏：① `Select-String -Pattern 'envbar|envCopy|envDemo'` 必须**零命中**（否则有悬空引用）；② 抽内联 `<script>` 跑 `node --check`；③ 抓线上 `index.html` 核对 ASCII 特征串，并确认**不含** `envbar`。最后 bump `SHELL`。
 
 ### 6.2 两个 PowerShell 假失败
 
@@ -355,7 +358,7 @@ msedge --headless=new --disable-gpu --no-sandbox --virtual-time-budget=150000 `
 
 **平台天花板**：PWA 没有前台服务（Foreground Service），做不到原生音乐 App 那种绝对常驻。四项都开了仍偶尔掉属能力边界，彻底解决只能 Capacitor 加壳 + 原生前台服务。
 
-### 9.1 屏幕常亮（`f651943` 起，仅 proto）
+### 9.1 屏幕常亮（`f651943` 起，已上线）
 
 纯音频播放**不会**阻止系统息屏（只有视频会），所以看歌词看到两三分钟屏就黑了。`wakeAcquire()` / `wakeRelease()` 用 Screen Wake Lock 兜住：
 
@@ -509,9 +512,10 @@ python -m http.server 8765 --bind 127.0.0.1
 | `675b9ef` | 原型转正为 `index.html` + 「同时套用到其他歌」勾选（`SHELL v14`） |
 | `022e0b2` | 媒体会话补齐（artwork/prev-next/positionState）+ 备份导入导出（`SHELL v15`） |
 | `26d4287` | 切歌不再设 `playbackState='none'`、后台位置保活（`SHELL v16`） |
-| `f651943` | 居中跟随改 `progScrolling` + `scrollend` 判定（修切歌后不回正）、加 Screen Wake Lock 屏幕常亮（`SHELL v17`，**仅 proto**，待真机验证后同步正式版） |
-| `493d00c` | 混合词只给汉字标音（`立[た]ち尽[つ]くす`），夹在汉字间的假名不再被标（`SHELL v18`，**仅 proto**） |
-| `f6f2db8` | 释义词范围加棕色虚线下划线，范围=整个词（含假名），释义小字居中在下方；`body.nogloss` 时线一起隐藏（`SHELL v19`，**仅 proto**） |
-| `3d406c0` | 范围线改用 `::after` 单线（v19 的 border 在 ruby inline 盒上画成两条、且太淡看不见），2px dotted 深棕、释义下移让位（`SHELL v20`，**仅 proto**） |
-| `c35cd33` | 释义改挂字典形 `basic_form`，渲染时吸收活用尾巴（助动词/て/で）成一整块；卡片补「＝原形」提示；demo 加一句 `立ち尽くした` 做回归样例（`SHELL v21`，**仅 proto**） |
-| `6c673f6` | 吸收尾巴前先判「是不是活用形」(`surface !== basic_form`)，修「ぴったりだ」被划成一整块；demo 加你报的那句 `"宝物"がぴったりだね`（`SHELL v22`，**仅 proto**） |
+| `f651943` | 居中跟随改 `progScrolling` + `scrollend` 判定（修切歌后不回正）、加 Screen Wake Lock 屏幕常亮（`SHELL v17`） |
+| `493d00c` | 混合词只给汉字标音（`立[た]ち尽[つ]くす`），夹在汉字间的假名不再被标（`SHELL v18`） |
+| `f6f2db8` | 释义词范围加棕色虚线下划线，范围=整个词（含假名），释义小字居中在下方；`body.nogloss` 时线一起隐藏（`SHELL v19`） |
+| `3d406c0` | 范围线改用 `::after` 单线（v19 的 border 在 ruby inline 盒上画成两条、且太淡看不见），2px dotted 深棕、释义下移让位（`SHELL v20`） |
+| `c35cd33` | 释义改挂字典形 `basic_form`，渲染时吸收活用尾巴（助动词/て/で）成一整块；卡片补「＝原形」提示；demo 加一句 `立ち尽くした` 做回归样例（`SHELL v21`） |
+| `6c673f6` | 吸收尾巴前先判「是不是活用形」(`surface !== basic_form`)，修「ぴったりだ」被划成一整块；demo 加用户报的那句 `"宝物"がぴったりだね`（`SHELL v22`） |
+| `edd08a0` | **正式版上线**：v17–v22 全部同步进 `index.html`（同步前验收 `git diff --no-index --stat` 只剩 4/32，即仅环境自检条差异）（`SHELL v23`） |
