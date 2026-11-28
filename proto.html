@@ -1361,7 +1361,10 @@ async function openSong(i, opts){
   /* 切歌立刻换掉媒体卡片上的歌名：ncm 要解密、flac 要读一会儿，
      不先改的话锁屏上还挂着上一首的名字 */
   msSetMetadata(s.name);
-  msSetState('none');
+  /* 别用 'none'：那是明确告诉 Chrome「这一页没有媒体了」，卡片会被立刻撤掉。
+     ncm 解密要几秒，通知就消失几秒再重新出现——看起来就是「通知老掉」。
+     'paused' 的含义是「有媒体、只是没在走」，卡片留在原地，解密完接着播。 */
+  msSetState('paused');
   $('#pTime').textContent = '0:00 / 0:00';
   $('#lyrics').innerHTML = '<div class="empty">正在读取…</div>';
   $('#list').classList.add('hidden');
@@ -1797,7 +1800,9 @@ $('#modeMenu').onclick = e => {
 document.addEventListener('click', () => $('#modeMenu').classList.add('hidden'));
 
 au.addEventListener('ended', () => {
-  if(!songs.length) return;
+  /* 没有队列可切（临时选了几首、只有一首）时，音频停了但状态还挂着 playing，
+     卡片会显示成「正在播」却没有声音；明确改成 paused */
+  if(!songs.length){ msSetState('paused'); return; }
   if(mode === 'one'){ au.currentTime = 0; au.play().catch(()=>{}); return; }
   playNext(true);
 });
@@ -2371,6 +2376,25 @@ window.addEventListener('pagehide', savePos);
 /* 只绑一次；回调里读的是全局 au / cur / songs，切歌不用重绑。
    放在文件靠后执行，确保 playPrev / playNext / songs 都已就位 */
 msBind();
+
+/* 后台保活：页面进后台后 rAF 停摆，位置状态就再不更新了。
+   部分机型/Chrome 版本会把「长时间收不到更新」的媒体会话判为已结束，把卡片收走。
+   定时器在后台仍会跑（最差被节流到一分钟一次，也够用），顺手把状态顶回 playing，
+   防止某些 ROM 在音频实际还在响的时候把会话标成暂停。 */
+setInterval(() => {
+  if(!document.hidden || au.paused) return;
+  msSetState('playing');
+  msSetPos();
+}, 2000);
+
+/* 回到前台时把卡片补全一遍：后台切过歌的话歌名/进度可能是旧的 */
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden) return;
+  if(!cur) return;
+  msSetMetadata(cur.name);
+  msSetState(au.paused ? 'paused' : 'playing');
+  msSetPos(true);
+});
 
 /* 预览模式：地址后加 ?demo 可无音频查看排版 */
 async function runDemo(){
