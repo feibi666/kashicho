@@ -836,11 +836,17 @@ async function annotatePlain(text){
     if(!g){ out += rubyFor(tk); continue; }
 
     /* 词干 + 尾巴拼成一块：立ち尽くし(たちつくし) + た(タ) → 立ち尽くした(たちつくした)。
-       最多并 2 个，避免把「〜たそうだ」这种整串语法吞进一个词条 */
+       最多并 2 个，避免把「〜たそうだ」这种整串语法吞进一个词条。
+
+       前提：只有「自己正处于活用形」才允许并尾巴，即 surface != basic_form。
+       「立ち尽くし」(基本形 立ち尽くす) 是活用形，后面的「た」属于它的活用 → 该并；
+       「ぴったり」(基本形还是 ぴったり) 本身就是完整词，后面的「だね」是谓语+语气 → 不能并。
+       少了这个判断，凡助動詞都被吞，「ぴったりだ」「静かです」这种都被划成一整块 */
+    const inflected = tk.surface_form !== lemmaOf(tk);
     let surf = tk.surface_form;
     let rd = readOf(tk.surface_form) || tk.reading || tk.pronunciation || '';
     let j = i;
-    while(j + 1 < tks.length && j - i < 2 && isTail(tks[j + 1])){
+    while(inflected && j + 1 < tks.length && j - i < 2 && isTail(tks[j + 1])){
       j++;
       const t2 = tks[j];
       surf += t2.surface_form;
@@ -2600,6 +2606,7 @@ async function runDemo(){
     ['歩き出すよ　この街の向こうへ','走出去吧　朝着这条街的那一头'],
     ['約束なんて　要らないから','不需要什么约定'],
     ['立ち尽くした　夕暮れの駅で','在黄昏的车站　伫立不动'],
+    ['"宝物"がぴったりだね','“宝物”正合适呢'],
     ['ただ君の声を　覚えていたい','只想记住你的声音']
   ];
   cur = { name: 'demo.mp3', rec: null, url: '' };
@@ -2619,6 +2626,7 @@ async function runDemo(){
       '歩き出すよ　この街の向こうへ': '<ruby>歩き出す<rt>あるきだす</rt></ruby>よ　この<span class="hg" data-g="街道"><ruby>街<rt>まち</rt></ruby></span>のむこうへ',
       '約束なんて　要らないから': '<span class="hg" data-g="约定"><ruby>約束<rt>やくそく</rt></ruby></span>なんて　<span class="hg" data-g="不需要"><ruby>要らない<rt>いらない</rt></ruby></span>から',
       '立ち尽くした　夕暮れの駅で': '<span class="hg" data-g="伫立不动"><ruby>立<rt>た</rt></ruby>ち<ruby>尽<rt>つ</rt></ruby>くした</span>　<ruby>夕暮れ<rt>ゆうぐれ</rt></ruby>の<ruby>駅<rt>えき</rt></ruby>で',
+      '"宝物"がぴったりだね': '"<span class="hg" data-g="宝物"><ruby>宝物<rt>たからもの</rt></ruby></span>"が<span class="hg" data-g="正合适">ぴったり</span>だね',
       'ただ君の声を　覚えていたい': 'ただ<span class="hg" data-g="你"><ruby>君<rt>きみ</rt></ruby></span>の<span class="hg" data-g="声音"><ruby>声<rt>こえ</rt></ruby></span>を　<ruby>覚えて<rt>おぼえて</rt></ruby>いたい'
     };
     lines = demo.map((d, i) => ({ t: i * 9, jp: d[0], zh: d[1], html: hard[d[0]] || esc(d[0]) }));
