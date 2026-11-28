@@ -3,7 +3,7 @@
 > **新对话开场白**（复制这一句即可）：
 > `读 G:\WorkBuddy work\2026-11-26-19-46-28\kashicho\HANDOVER.md，继续维护 kashicho`
 >
-> 最后更新：2026-11-28 晚 · 对应提交 `f6f2db8` · 线上 `SHELL v19` / `DICT v4` / Worker `?v=13`
+> 最后更新：2026-11-28 晚 · 对应提交 `3d406c0` · 线上 `SHELL v20` / `DICT v4` / Worker `?v=13`
 >
 > ⚠️ 这次改动**只在 `proto.html`**，`index.html` 还是 `26d4287` 的行为，等真机验证通过再同步（见 §6.1）。
 
@@ -168,6 +168,20 @@ const DICT  = 'kashicho-dict-v4';     // 只在要强制重下词典时升（升
 伪元素不进选区，正好不会被复制带进剪贴板。代价是绝对定位不占流，含释义的行必须手动加 `line-height`（现用 2.62），否则盖住下一行。
 
 另外 `<rt>` 是正文兄弟节点，会进剪贴板 → 必须 `user-select:none;pointer-events:none`。
+
+### 5.6.1 包着 ruby 的 `.hg` 不能上 `border-bottom`
+
+给 `.hg` 直接写 `border-bottom` 画范围线（v19 的做法）在真机上会出两条线：`.hg` 是 inline，里面是 `ruby`，inline 盒被拆成多个行框片段，**每个片段各画一条 border**，其中一条正好压在下方释义字上。v19 的 1px 半透明虚线还叠加了「太淡看不见」的问题，用户反馈「下划线没实现」。
+
+现做法：`::after` 绝对定位单独画一条 + `bottom:-.12em`（v20）：
+
+```css
+.line .hg::after{content:"";position:absolute;left:-.04em;right:-.04em;bottom:-.12em;
+  border-bottom:2px dotted rgba(158,72,30,.92);pointer-events:none}
+.line .hg::before{top:calc(100% + .3em)}   /* 释义再让开，别和线挤在一起 */
+```
+
+线条可见度按**手机 1 倍像素密度**验收，不能只看 2 倍缩放的无头截图——1px 半透明在 2 倍图里「勉强有」，到手机上就是没有。
 
 ### 5.7 歌词容器的平滑滚动只在 JS 里指定
 
@@ -458,3 +472,4 @@ python -m http.server 8765 --bind 127.0.0.1
 | `f651943` | 居中跟随改 `progScrolling` + `scrollend` 判定（修切歌后不回正）、加 Screen Wake Lock 屏幕常亮（`SHELL v17`，**仅 proto**，待真机验证后同步正式版） |
 | `493d00c` | 混合词只给汉字标音（`立[た]ち尽[つ]くす`），夹在汉字间的假名不再被标（`SHELL v18`，**仅 proto**） |
 | `f6f2db8` | 释义词范围加棕色虚线下划线，范围=整个词（含假名），释义小字居中在下方；`body.nogloss` 时线一起隐藏（`SHELL v19`，**仅 proto**） |
+| `3d406c0` | 范围线改用 `::after` 单线（v19 的 border 在 ruby inline 盒上画成两条、且太淡看不见），2px dotted 深棕、释义下移让位（`SHELL v20`，**仅 proto**） |
