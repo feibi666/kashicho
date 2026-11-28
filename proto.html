@@ -195,6 +195,9 @@ input[type=text]::placeholder{color:var(--faint)}
 .wswords{display:flex;flex-wrap:wrap;gap:7px;max-height:38vh;overflow-y:auto;padding:2px 0 4px}
 .wchip{display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;min-width:44px}
 .wchip .wt{font-size:15px;line-height:1.25;color:var(--fg)}
+/* 原文是活用形时补一行「＝字典形」：释义挂字典形，不写清楚会以为标错词了 */
+.wchip .wl{font-size:9px;line-height:1.1;color:var(--faint);white-space:nowrap}
+.wchip .wl:empty{display:none}
 .wchip .wr{font-size:10px;line-height:1.2;color:var(--accent);min-height:12px}
 .wchip:active{background:var(--accent-soft);border-color:var(--accent)}
 .wshint{font-size:12px;color:var(--muted);padding:6px 0}
@@ -715,11 +718,37 @@ function rubyWrap(surf, reading){
 }
 
 /* ================= 生词释义 / 人工注音 ================= */
-/* 释义按「词形」全局存：{ "咲く": "开花" }，标一次别的歌也能用 */
+/* 释义按「字典形」全局存：{ "立ち尽くす": "伫立不动" }，标一次所有歌、所有活用形都能用。
+   早期版本按 surface_form 存（"立ち尽くし"），glossOf 里留了一层回退，旧标注不会丢 */
 let GLOSS = {};
 async function loadGloss(){
   const g = await DB.get('gloss').catch(()=>null);
   GLOSS = (g && typeof g === 'object') ? g : {};
+}
+
+/* 查这个词的释义：先认字典形，再认原形（兼容早期按 surface 存的数据）。
+   分词器给的 basic_form 才是词典里的那个词——立ち尽くし/立ち尽くした/立ち尽くして
+   全都指回「立ち尽くす」，所以释义挂它，一个词条管住全部活用形 */
+function glossOf(tk){
+  if(!tk) return '';
+  /* 同时认分词 token（surface_form/basic_form）和查词卡片的词条（t/lemma）两种形状 */
+  const surf = tk.surface_form || tk.t || '';
+  const lemma = tk.basic_form || tk.lemma || surf;
+  return GLOSS[lemma] || GLOSS[surf] || '';
+}
+function lemmaOf(tk){
+  return (tk && (tk.basic_form || tk.surface_form)) || '';
+}
+
+/* 释义块的「活用尾巴」：助动词（た/たい/ない/れる…）和接续助词（て/で/ながら/たら/ても）。
+   吃到这些为止，是为了让「立ち尽くし」+「た」整块带下划线，而不是被切成两截。
+   格助词（を/が/に/へ/と）不吃——否则「君の」会被并成一块；
+   非自立动词（いる/しまう/おく）也不吃——那是「〜ている」这类语法，属于另一层，不该塞进词义 */
+const TAIL_CONJ = { 'て': 1, 'で': 1, 'ちゃ': 1, 'じゃ': 1, 'ながら': 1, 'たら': 1, 'ても': 1, 'ば': 1 };
+function isTail(tk){
+  if(!tk) return false;
+  if(tk.pos === '助動詞') return true;
+  return tk.pos === '助詞' && !!TAIL_CONJ[tk.surface_form];
 }
 
 /* 人工注音跟着歌走：存在这首歌自己的歌词记录里 cur.rec.read = { 词形: 假名 }。
@@ -789,17 +818,41 @@ function rubyWithGloss(surf, reading, gloss){
 
 function rubyFor(tk){
   const surf = tk.surface_form;
-  const g = GLOSS[surf];
+  const g = glossOf(tk);
   const man = readOf(surf);
   if(g) return rubyWithGloss(surf, man || tk.reading || tk.pronunciation, g);
   if(!KANJI.test(surf)) return esc(surf);
   return rubyWrap(surf, man || tk.reading || tk.pronunciation);
 }
+
+/* 逐词元渲染。命中释义的那个词元要把活用尾巴并进来一起包，所以这里不能用 for...of 简单遍历 */
 async function annotatePlain(text){
   if(!text) return '';
   const tks = mergeTokens(await tokenizeText(text));
   let out = '';
-  for(const tk of tks) out += rubyFor(tk);
+  for(let i = 0; i < tks.length; i++){
+    const tk = tks[i];
+    const g = glossOf(tk);
+    if(!g){ out += rubyFor(tk); continue; }
+
+    /* 词干 + 尾巴拼成一块：立ち尽くし(たちつくし) + た(タ) → 立ち尽くした(たちつくした)。
+       最多并 2 个，避免把「〜たそうだ」这种整串语法吞进一个词条 */
+    let surf = tk.surface_form;
+    let rd = readOf(tk.surface_form) || tk.reading || tk.pronunciation || '';
+    let j = i;
+    while(j + 1 < tks.length && j - i < 2 && isTail(tks[j + 1])){
+      j++;
+      const t2 = tks[j];
+      surf += t2.surface_form;
+      const r2 = t2.reading || t2.pronunciation || '';
+      if(r2){
+        /* 人工注音只覆盖词干，尾巴照补，否则「立ち尽くし(手动标)」会把「た」的音丢掉 */
+        rd = (rd && rd !== '*') ? (rd + r2) : r2;
+      }
+    }
+    out += rubyWithGloss(surf, rd, g);
+    i = j;
+  }
   return out;
 }
 
@@ -844,7 +897,7 @@ async function wordsOf(text){
   for(const sg of segs){
     if(sg.surf){
       const man = readOf(sg.surf);
-      out.push({ t: sg.surf, r: man || sg.read, a: sg.read, m: man ? 1 : 0 });
+      out.push({ t: sg.surf, lemma: sg.surf, r: man || sg.read, a: sg.read, m: man ? 1 : 0 });
       continue;
     }
     let tks;
@@ -853,7 +906,14 @@ async function wordsOf(text){
       let a = tk.reading || tk.pronunciation || '';
       if(a && a !== '*') a = kata2hira(a); else a = '';
       const man = readOf(tk.surface_form);
-      out.push({ t: tk.surface_form, r: man || a, a: a, m: man ? 1 : 0 });
+      /* lemma 是字典形（立ち尽くし → 立ち尽くす），释义挂在它上面；
+         卡片上还要显示原文，所以两个都留着 */
+      out.push({
+        t: tk.surface_form,
+        lemma: lemmaOf(tk),
+        r: man || a, a: a, m: man ? 1 : 0,
+        pos: tk.pos || ''
+      });
     }
   }
   return out;
@@ -874,12 +934,12 @@ async function copyText(txt, label){
   toast('已复制 ' + (label || txt));
 }
 
-let wsIdx = -1, wsMode = 'copy', wsPick = '';
+let wsIdx = -1, wsMode = 'copy', wsPick = '', wsPickLemma = '';
 
 async function openWords(i){
   const ln = lines[i];
   if(!ln) return;
-  wsIdx = i; wsPick = '';
+  wsIdx = i; wsPick = ''; wsPickLemma = '';
   /* 「同时套用到其他歌」每次打开都回到不勾：套用是会改动别的歌的操作，不该默认带上 */
   const all = $('#rdAll');
   if(all) all.checked = false;
@@ -889,7 +949,7 @@ async function openWords(i){
 }
 
 function setWsMode(m){
-  if(wsMode !== m) wsPick = '';
+  if(wsMode !== m) wsPick = ''; wsPickLemma = '';
   wsMode = m;
   $('#wsTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.getAttribute('data-t') === m));
   $('#wsHint').textContent = m === 'copy'
@@ -916,12 +976,17 @@ async function renderWsWords(){
   for(const w of ln.words){
     const b = document.createElement('button');
     b.className = 'wchip' + (wsPick && wsPick === w.t ? ' sel' : '');
-    b.innerHTML = '<span class="wt"></span><span class="wr"></span><span class="wd"></span>';
+    b.innerHTML = '<span class="wt"></span><span class="wl"></span><span class="wr"></span><span class="wd"></span>';
     b.querySelector('.wt').textContent = w.t;
+    /* 原文是活用形（立ち尽くし）时，把字典形亮出来：
+       释义是挂在字典形上的，不说明白用户会以为标错了词 */
+    const wl = b.querySelector('.wl');
+    if(w.lemma && w.lemma !== w.t) wl.textContent = '＝' + w.lemma;
+    else wl.remove();
     const wr = b.querySelector('.wr');
     wr.textContent = (w.r && w.r !== w.t) ? w.r : '';
     if(w.m) wr.classList.add('man');
-    b.querySelector('.wd').textContent = GLOSS[w.t] || '';
+    b.querySelector('.wd').textContent = glossOf(w);
     b.onclick = () => onWordTap(w);
     box.appendChild(b);
   }
@@ -942,14 +1007,18 @@ function onWordTap(w){
     return;
   }
   wsPick = w.t;
+  /* 释义写进字典形；注音仍按原文（同形不同音的情况要靠 surface 区分） */
+  wsPickLemma = w.lemma || w.t;
   renderWsWords();
   if(wsMode === 'read'){
     paintRd();
     $('#rdInput').focus();
     return;
   }
-  $('#glWord').textContent = w.t;
-  $('#glInput').value = GLOSS[w.t] || '';
+  /* 这里只放原文：输入行宽度有限（32% 上限），塞「（原形 …）」会被省略号截掉。
+     原形提示由卡片上的「＝…」那行负责 */
+  $('#glWord').textContent = wsPick;
+  $('#glInput').value = glossOf(w);
   $('#glInput').focus();
 }
 
@@ -1409,7 +1478,7 @@ async function openSong(i, opts){
   lines = []; curIdx = -1; loopIdx = -1; loopOn = false; $('#btnLoop').classList.remove('act');
   /* 查词面板还开着的话，它记的是上一首的行号；切歌后必须清掉，
      否则接着点「注音/释义」会把词写到新歌头上 */
-  wsIdx = -1; wsPick = '';
+  wsIdx = -1; wsPick = ''; wsPickLemma = '';
   $('#wordSheet').classList.add('hidden');
   setTiming(false);
   if(queue.length !== songs.length) rebuildQueue(i);
@@ -2530,6 +2599,7 @@ async function runDemo(){
     ['一人で大人になった気がした','觉得自己已经一个人长大了'],
     ['歩き出すよ　この街の向こうへ','走出去吧　朝着这条街的那一头'],
     ['約束なんて　要らないから','不需要什么约定'],
+    ['立ち尽くした　夕暮れの駅で','在黄昏的车站　伫立不动'],
     ['ただ君の声を　覚えていたい','只想记住你的声音']
   ];
   cur = { name: 'demo.mp3', rec: null, url: '' };
@@ -2548,6 +2618,7 @@ async function runDemo(){
       '一人で大人になった気がした': '一人で<span class="hg" data-g="大人"><ruby>大人<rt>おとな</rt></ruby></span>になった<ruby>気<rt>き</rt></ruby>がした',
       '歩き出すよ　この街の向こうへ': '<ruby>歩き出す<rt>あるきだす</rt></ruby>よ　この<span class="hg" data-g="街道"><ruby>街<rt>まち</rt></ruby></span>のむこうへ',
       '約束なんて　要らないから': '<span class="hg" data-g="约定"><ruby>約束<rt>やくそく</rt></ruby></span>なんて　<span class="hg" data-g="不需要"><ruby>要らない<rt>いらない</rt></ruby></span>から',
+      '立ち尽くした　夕暮れの駅で': '<span class="hg" data-g="伫立不动"><ruby>立<rt>た</rt></ruby>ち<ruby>尽<rt>つ</rt></ruby>くした</span>　<ruby>夕暮れ<rt>ゆうぐれ</rt></ruby>の<ruby>駅<rt>えき</rt></ruby>で',
       'ただ君の声を　覚えていたい': 'ただ<span class="hg" data-g="你"><ruby>君<rt>きみ</rt></ruby></span>の<span class="hg" data-g="声音"><ruby>声<rt>こえ</rt></ruby></span>を　<ruby>覚えて<rt>おぼえて</rt></ruby>いたい'
     };
     lines = demo.map((d, i) => ({ t: i * 9, jp: d[0], zh: d[1], html: hard[d[0]] || esc(d[0]) }));
@@ -2593,17 +2664,22 @@ async function runDemo(){
   $('#glSave').onclick = async () => {
     if(!wsPick){ toast('先在上面的词里点一个'); return; }
     const v = $('#glInput').value.trim();
-    if(v) GLOSS[wsPick] = v; else delete GLOSS[wsPick];
+    const key = wsPickLemma || wsPick;
+    if(v) GLOSS[key] = v; else delete GLOSS[key];
+    /* 早期版本按原文存过，清的时候一并清掉，免得删了还挂着 */
+    if(key !== wsPick && !v) delete GLOSS[wsPick];
     await DB.set('gloss', GLOSS).catch(()=>{});
-    toast(v ? ('已标注 ' + wsPick + ' = ' + v) : ('已删除 ' + wsPick));
+    toast(v ? ('已标注 ' + key + ' = ' + v) : ('已删除 ' + key));
     await refreshGloss();
   };
   $('#glDel').onclick = async () => {
     if(!wsPick) return;
-    delete GLOSS[wsPick];
+    const key = wsPickLemma || wsPick;
+    delete GLOSS[key];
+    if(key !== wsPick) delete GLOSS[wsPick];
     $('#glInput').value = '';
     await DB.set('gloss', GLOSS).catch(()=>{});
-    toast('已删除 ' + wsPick);
+    toast('已删除 ' + key);
     await refreshGloss();
   };
 

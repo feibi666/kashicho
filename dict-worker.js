@@ -82,12 +82,16 @@ self.onmessage = async (e) => {
     try{
       if(!tokenizer) throw new Error('词典还没准备好');
       const raw = tokenizer.tokenize(d.text) || [];
-      /* 只回传主线程真正要用的字段，省结构化克隆开销 */
+      /* 只回传主线程真正要用的字段，省结构化克隆开销。
+         basic_form 是字典形（立ち尽くし → 立ち尽くす），释义按它挂，
+         这样一个词条能覆盖这首歌里它的所有活用形 */
       const tokens = raw.map(t => ({
         surface_form: t.surface_form,
         reading: t.reading,
         pronunciation: t.pronunciation,
-        pos: t.pos
+        pos: t.pos,
+        basic_form: t.basic_form,
+        conjugated_form: t.conjugated_form
       }));
       self.postMessage({ type: 'tokens', id: d.id, tokens });
     }catch(err){
