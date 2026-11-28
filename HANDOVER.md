@@ -3,10 +3,11 @@
 > **新对话开场白**（复制这一句即可）：
 > `读 G:\WorkBuddy work\2026-11-26-19-46-28\kashicho\HANDOVER.md，继续维护 kashicho`
 >
-> 最后更新：2026-11-29 凌晨 · 对应提交 `edd08a0` · 线上 `SHELL v23` / `DICT v4` / Worker `?v=13`
+> 最后更新：2026-11-29 凌晨 · 对应提交 `45bc83e` · 线上 `SHELL v24` / `DICT v4` / Worker `?v=13`
 >
 > ✅ v17–v22 那一批 proto 改动（居中跟随、屏幕常亮、只标汉字、释义点线、字典形释义、吸收闸门）
-> **已于 `edd08a0` 全部同步进 `index.html` 并上线**，正式版与原型业务代码逐字一致，差异只剩环境自检条。
+> 已于 `edd08a0` 全部同步进 `index.html`。但**当时上线后真机全都没生效**，真因是 SW 缓存策略（§5.8），
+> `45bc83e` 已修（`SHELL v24`）。
 
 ---
 
@@ -18,7 +19,7 @@
 | 原型地址 | 同上换 `proto.html`，加 `?demo` 可无音频看排版 |
 | 仓库 | `https://github.com/feibi666/kashicho`（public，Pages 免费版必须公开） |
 | 本地目录 | `G:\WorkBuddy work\2026-11-26-19-46-28\kashicho\` |
-| 当前 HEAD | `edd08a0`（`SHELL v23`，正式版已含 v17–v22 全部改动） |
+| 当前 HEAD | `45bc83e`（`SHELL v24`，含 SW 缓存策略修复） |
 | 改完发版 | 升 `SHELL` → 语法自检 → push（挂 Clash）→ 等 1 分钟 → 抓线上核对 |
 
 用户是唯一的真实用户，真机是安卓 Chrome。**助手改不了的部分**：文件夹授权、锁屏表现、后台保活，这些只能用户自己测。
@@ -232,6 +233,39 @@ kuromoji 其实给了答案，只是 worker 早期把它过滤掉了：
 
 `'none'` 的含义是**「这一页现在没有媒体」**，Chrome 收到就立刻撤卡。切歌时写 `'none'` 会导致每换一首卡片消失一次（ncm 还要先解密几秒，空窗更久）。表示「有媒体但没在走」要用 `'paused'`。
 
+### 5.9 正式版改完「怎么都不生效」，而原型页一直正常（`45bc83e` 修的）
+
+**现象**：`index.html` 同步上线后，用户从主屏图标打开，所有改动全都没实现，把窗口整个划掉重开七八次也没用；同时 `proto.html` 每次改都能立刻看到。
+
+**真因是两层缓存叠加，缺一不可**：
+
+1. **旧 SW 的 fetch 对自身资源是「缓存优先，命中即返回」**——网络上的新 HTML 只会被写进缓存，当次不返回。
+2. **`./` 和 `./index.html` 都在 `ASSETS` 里被 precache**，于是正式版 HTML 被死死锁在缓存里；而 `proto.html` **不在 `ASSETS`**，缓存必然不命中 → 走网络 → 永远最新。这正好解释了「原型全生效、正式版全不生效」这个极具误导性的现象。
+3. 想解套就得 bump `SHELL` 换缓存名，可 **`sw.js` 自己也受 GitHub Pages 的 `Cache-Control: max-age=600` 约束**（实测 `/`、`/index.html`、`/sw.js`、`/manifest.json` 全是 `max-age=600`）。注册时没传 `updateViaCache`，默认 `'imports'` 表示主脚本仍走 HTTP 缓存 → 改完 sw.js 最多要等 10 分钟浏览器才发现有新版本。用户反复重开窗口**不会**绕过这个 HTTP 缓存。
+4. 更隐蔽：`install` 里的 `c.addAll(ASSETS)` 同样走普通 fetch，会再次命中 HTTP 缓存 → 新 SW 装进缓存的**可能还是旧 HTML**，形成自我延续。
+
+**现在的做法**（三者缺一不可）：
+
+```js
+// sw.js：导航一律网络优先，且强制绕过 HTTP 缓存
+const isHtml = req.mode === 'navigate' || url.pathname.endsWith('/') || /\.html$/.test(url.pathname);
+if(isHtml){
+  const r = await fetch(req, { cache: 'reload' });   // 拿不到才回落缓存，离线能力保留
+  ...
+}
+// sw.js：precache 逐个 cache:'reload'，单条失败不影响其它（addAll 是全军覆没）
+// index.html / proto.html：注册时 updateViaCache:'none' + 主动 reg.update()
+```
+
+静态资源（`kuromoji.js`、图标）**保持缓存优先**，别跟着改——体积大、几乎不变，改了就白费流量。词典代理逻辑不动。
+
+**配套的自救入口**：`./?flush` 会注销 SW、清空所有 Cache Storage、回首页。只动 `caches`，
+**不碰 IndexedDB**（歌词记录、释义标注都在 IDB，不会丢；代价是 17MB 词典重下）。
+
+**排查口诀**：以后遇到「改了没生效」，先分清是哪种缓存——
+- 打开 `?任意参数` 能生效 → 是 **SW/HTTP 缓存**锁住了，不是代码错
+- 带参数也不生效 → 才是代码问题
+
 ---
 
 ## 6. 发版流程（固定）
@@ -297,7 +331,7 @@ Copy-Item proto.html index.html -Force
 | 拿不到 `lines` / `wsIdx` | 顶层 `let` 不挂 `window`，`iframe.contentWindow.lines` 是 undefined。要在 iframe 里**注入 script** 才同 realm |
 | 人工注音按词形全局存 → 换歌读音串 | 已改存 `rec.read`，按歌隔离（§4） |
 | 查词面板开着切歌，接着点词写到新歌上 | `openSong()` 里清 `wsIdx`/`wsPick` 并关面板 |
-| 改了页面但手机还是旧版 | SW 缓存优先，不 bump `SHELL` 永远是旧版（§5.5） |
+| 改了页面但手机还是旧版 | 旧 SW 缓存优先 + `./` 被 precache + Pages 给 HTML/sw.js 都发 `max-age=600`，划窗口重开七八次也没用（§5.9）。先开 `?任意参数` 判断是不是缓存问题 |
 | 勾「同时套用到其他歌」有的歌没变 | 按设计：只写进「歌词里确实出现该词形」的歌，且已有不同读音的不覆盖 |
 | 锁屏 / 通知栏没有媒体卡片 | 代码要齐：`metadata`（artwork 必须**绝对 URL**）、`prev/nexttrack`、`setPositionState`、`playbackState`。齐了还没有 → 查系统（§9） |
 | 卡片出来一会儿又消失 | ① 切歌设了 `playbackState='none'`（主动撤卡）；② 系统「固定媒体播放器」没开；③ Chrome 电池是「优化」，锁屏后后台被冻结 |
@@ -519,3 +553,4 @@ python -m http.server 8765 --bind 127.0.0.1
 | `c35cd33` | 释义改挂字典形 `basic_form`，渲染时吸收活用尾巴（助动词/て/で）成一整块；卡片补「＝原形」提示；demo 加一句 `立ち尽くした` 做回归样例（`SHELL v21`） |
 | `6c673f6` | 吸收尾巴前先判「是不是活用形」(`surface !== basic_form`)，修「ぴったりだ」被划成一整块；demo 加用户报的那句 `"宝物"がぴったりだね`（`SHELL v22`） |
 | `edd08a0` | **正式版上线**：v17–v22 全部同步进 `index.html`（同步前验收 `git diff --no-index --stat` 只剩 4/32，即仅环境自检条差异）（`SHELL v23`） |
+| `45bc83e` | 修「正式版改完怎么都不生效」：`sw.js` 导航请求改网络优先 + `cache:'reload'`、precache 逐条绕 HTTP 缓存、注册加 `updateViaCache:'none'` 与主动 `update()`、新增 `?flush` 自救入口（`SHELL v24`） |
