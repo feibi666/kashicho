@@ -3,7 +3,9 @@
 > **新对话开场白**（复制这一句即可）：
 > `读 G:\WorkBuddy work\2026-11-26-19-46-28\kashicho\HANDOVER.md，继续维护 kashicho`
 >
-> 最后更新：2026-11-28 · 对应提交 `26d4287` · 线上 `SHELL v16` / `DICT v4` / Worker `?v=13`
+> 最后更新：2026-11-28 晚 · 对应提交 `f651943` · 线上 `SHELL v17` / `DICT v4` / Worker `?v=13`
+>
+> ⚠️ 这次改动**只在 `proto.html`**，`index.html` 还是 `26d4287` 的行为，等真机验证通过再同步（见 §6.1）。
 
 ---
 
@@ -15,7 +17,7 @@
 | 原型地址 | 同上换 `proto.html`，加 `?demo` 可无音频看排版 |
 | 仓库 | `https://github.com/feibi666/kashicho`（public，Pages 免费版必须公开） |
 | 本地目录 | `G:\WorkBuddy work\2026-11-26-19-46-28\kashicho\` |
-| 当前 HEAD | `26d4287`（`SHELL v16`） |
+| 当前 HEAD | `f651943`（`SHELL v17`，改动在 proto，正式版待同步） |
 | 改完发版 | 升 `SHELL` → 语法自检 → push（挂 Clash）→ 等 1 分钟 → 抓线上核对 |
 
 用户是唯一的真实用户，真机是安卓 Chrome。**助手改不了的部分**：文件夹授权、锁屏表现、后台保活，这些只能用户自己测。
@@ -161,7 +163,11 @@ const DICT  = 'kashicho-dict-v4';     // 只在要强制重下词典时升（升
 
 另外 `<rt>` 是正文兄弟节点，会进剪贴板 → 必须 `user-select:none;pointer-events:none`。
 
-### 5.7 MediaSession 的 `playbackState` 只有三态，`none` 是「销毁」
+### 5.7 歌词容器的平滑滚动只在 JS 里指定
+
+`.lyrics` **不能**加 CSS `scroll-behavior:smooth`。加了以后连 `scrollTop = 0` 都变成动画，切歌回顶会触发一连串 scroll 事件，把「程序滚动」和「用户滑动」搅在一起（详见 §7 第一条）。平滑只在 `centerCur()` 里显式传 `behavior:'smooth'`。
+
+### 5.8 MediaSession 的 `playbackState` 只有三态，`none` 是「销毁」
 
 `'none'` 的含义是**「这一页现在没有媒体」**，Chrome 收到就立刻撤卡。切歌时写 `'none'` 会导致每换一首卡片消失一次（ncm 还要先解密几秒，空窗更久）。表示「有媒体但没在走」要用 `'paused'`。
 
@@ -212,6 +218,8 @@ Copy-Item proto.html index.html -Force
 
 | 现象 | 真因 |
 |---|---|
+| 新歌一开居中就失效：高亮一路往下、跑出屏幕，得手动点「回到当前句」 | 旧判定「距上次程序滚动 >700ms 即用户滑动」，但切歌回顶本身就是平滑动画、时间戳还停在上一次，第一个 scroll 事件就把 `follow` 关了。`f651943` 改为 `progScrolling` 标志 + `scrollend` 收尾，回顶走 `jumpTop()` 也挡一下 |
+| 听歌两三分钟屏幕自己黑 | 纯音频不会阻止息屏（只有视频会）。`f651943` 加了 Screen Wake Lock：播放申请、暂停释放、回前台重取 |
 | 卡在「正在准备注音词典」 | 词典从 jsdelivr 直连 17MB 下不完（早期）；现为本地 + SW 代理 |
 | 「此页面没有响应」 | 主线程构建 17MB 词典，已移入 Worker |
 | Worker 一个日志都不报，45 秒判卡死 | SW 吐了旧版 Worker 脚本，URL 没版本参数 |
@@ -285,6 +293,15 @@ msedge --headless=new --disable-gpu --no-sandbox --virtual-time-budget=150000 `
 | 自启动 / 锁定后台 | 国产 ROM 的额外项 | 防进程回收 |
 
 **平台天花板**：PWA 没有前台服务（Foreground Service），做不到原生音乐 App 那种绝对常驻。四项都开了仍偶尔掉属能力边界，彻底解决只能 Capacitor 加壳 + 原生前台服务。
+
+### 9.1 屏幕常亮（`f651943` 起，仅 proto）
+
+纯音频播放**不会**阻止系统息屏（只有视频会），所以看歌词看到两三分钟屏就黑了。`wakeAcquire()` / `wakeRelease()` 用 Screen Wake Lock 兜住：
+
+- `play` → 申请 `navigator.wakeLock.request('screen')`；`pause` → 释放
+- 页面被切后台时浏览器会**自动释放**锁（规范行为），回前台且仍在播时重取一次
+- 申请失败（省电模式、电量过低、不支持）静默降级，不影响播放
+- ⚠️ 挡不住用户按电源键主动锁屏；锁屏后继续听靠的是上面的媒体会话 + 系统四项设置
 
 ---
 
@@ -431,3 +448,4 @@ python -m http.server 8765 --bind 127.0.0.1
 | `675b9ef` | 原型转正为 `index.html` + 「同时套用到其他歌」勾选（`SHELL v14`） |
 | `022e0b2` | 媒体会话补齐（artwork/prev-next/positionState）+ 备份导入导出（`SHELL v15`） |
 | `26d4287` | 切歌不再设 `playbackState='none'`、后台位置保活（`SHELL v16`） |
+| `f651943` | 居中跟随改 `progScrolling` + `scrollend` 判定（修切歌后不回正）、加 Screen Wake Lock 屏幕常亮（`SHELL v17`，**仅 proto**，待真机验证后同步正式版） |
