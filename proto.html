@@ -93,7 +93,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 #tapBtn:active{transform:scale(.99);opacity:.9}
 body.timing .fab{display:none}
 
-.lyrics{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(var(--safe-t) + 8px) 0 20px;scroll-behavior:smooth}
+.lyrics{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(var(--safe-t) + 8px) 0 20px}
 .line{display:flex;gap:4px;padding:9px 14px 9px 12px;position:relative}
 /* 行首播放键常驻可点，点了从这句播 */
 .line .tk{flex:none;width:16px;height:16px;margin-top:calc(.42em);padding:0;border:0;background:none;display:flex;align-items:center;justify-content:center;opacity:.22;transition:opacity .12s,transform .12s}
@@ -1343,7 +1343,7 @@ async function openSong(i, opts){
   const oldUrl = cur && cur.url;
   stopLoop();
   follow = true;
-  $('#lyrics').scrollTop = 0;
+  jumpTop();
   lines = []; curIdx = -1; loopIdx = -1; loopOn = false; $('#btnLoop').classList.remove('act');
   /* 查词面板还开着的话，它记的是上一首的行号；切歌后必须清掉，
      否则接着点「注音/释义」会把词写到新歌头上 */
@@ -1574,8 +1574,28 @@ function syncCur(force){
 
 /* ================= 当前句居中 ================= */
 /* follow=true 时当前句自动滚到可视区正中；手指一滑就停止跟随，
-   「回到当前句」按钮恢复。程序滚动会先记一笔时间戳，用它和用户滚动区分开。 */
-let follow = true, lastProgScroll = 0, centerTimer = 0;
+   「回到当前句」按钮恢复。
+   判定方式：程序滚动期间 progScrolling=true，这期间的 scroll 事件一律忽略，
+   靠 scrollend 收尾（Chrome 114+），另加定时器兜底。
+   旧实现用「距上次程序滚动 >700ms 即算用户滑动」，但切歌回顶本身就是一次
+   长距离平滑动画，时间戳又还停在上一首，新歌一开就被误判成用户滑动，
+   follow 直接关掉，于是高亮一路往下走却不再回正。 */
+let follow = true, centerTimer = 0, progScrolling = false, progTimer = 0;
+
+function endProgScroll(){
+  progScrolling = false;
+  clearTimeout(progTimer);
+  progTimer = 0;
+}
+
+/* 瞬时回顶：哪怕不是平滑滚动，scrollTop 一变也会触发一次 scroll 事件，
+   不挡一下就会被当成用户滑动，follow 立刻被关。 */
+function jumpTop(){
+  progScrolling = true;
+  clearTimeout(progTimer);
+  progTimer = setTimeout(endProgScroll, 150);
+  $('#lyrics').scrollTop = 0;
+}
 
 function centerCur(){
   if(!follow) return;
@@ -1585,8 +1605,14 @@ function centerCur(){
   const er = el.getBoundingClientRect(), br = box.getBoundingClientRect();
   const target = box.scrollTop + (er.top - br.top) - (box.clientHeight - el.offsetHeight) / 2;
   const max = Math.max(0, box.scrollHeight - box.clientHeight);
-  lastProgScroll = Date.now();
-  box.scrollTo({ top: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
+  const top = Math.max(0, Math.min(max, target));
+  /* 位置本来就对（第一句贴顶时常见）就别开保护，否则会白吞 1.2 秒的用户滑动 */
+  if(Math.abs(top - box.scrollTop) < 1){ endProgScroll(); return; }
+  progScrolling = true;
+  clearTimeout(progTimer);
+  /* 兜底：scrollend 不触发时（动画被吃掉）也能解除，别把用户滑动一直吞掉 */
+  progTimer = setTimeout(endProgScroll, 1200);
+  box.scrollTo({ top, behavior: 'smooth' });
 }
 
 function scheduleCenter(){
@@ -1618,6 +1644,39 @@ function togglePlay(){
 }
 au.addEventListener('play', () => { $('#btnPlay').classList.add('on'); startTick(); msSetState('playing'); msSetPos(true); });
 au.addEventListener('pause', () => { $('#btnPlay').classList.remove('on'); savePos(); msSetState('paused'); msSetPos(true); });
+
+/* ================= 屏幕常亮 ================= */
+/* 纯音频播放不会阻止系统息屏（只有视频会），边听边看歌词时屏会自己黑。
+   播放期间申请 Screen Wake Lock，暂停时释放；页面被切到后台时浏览器会
+   自动释放（规范行为），回到前台且仍在播放时重新取一次。
+   不支持该 API 或被拒（省电模式、电量过低）就静默降级，不影响播放。 */
+let wakeLock = null, wakeWanted = false, wakePending = false;
+
+async function wakeAcquire(){
+  wakeWanted = true;
+  /* play 和 visibilitychange 可能同时打进来，用一个 pending 挡住重复申请 */
+  if(wakeLock || wakePending || !navigator.wakeLock) return;
+  wakePending = true;
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  }catch(e){ wakeLock = null; }
+  finally{ wakePending = false; }
+}
+
+function wakeRelease(){
+  wakeWanted = false;
+  const w = wakeLock;
+  wakeLock = null;
+  /* release() 返回 Promise；已经失效的锁再释放会 reject，静默吞掉 */
+  if(w){ try{ Promise.resolve(w.release()).catch(()=>{}); }catch(e){} }
+}
+
+au.addEventListener('play', wakeAcquire);
+au.addEventListener('pause', wakeRelease);
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && wakeWanted && !au.paused) wakeAcquire();
+});
 function startTick(){ if(!rafId) rafId = requestAnimationFrame(tick); }
 function stopLoop(){ if(rafId){ cancelAnimationFrame(rafId); rafId = 0; } }
 
@@ -1843,18 +1902,22 @@ $('#back').onclick = () => {
 
 $('#fab').onclick = () => {
   follow = true;
+  endProgScroll();
   checkFab();
   centerCur();
 };
 
-/* 用户自己滑动 → 停止跟随；程序滚动留下的时间戳用来区分，不然每一帧都会被判成用户滚动 */
+/* 用户自己滑动 → 停止跟随。程序滚动期间（centerCur 发起、到 scrollend 为止）
+   的 scroll 事件全部忽略，不再靠时间戳猜。手指开始拖时平滑动画会被打断，
+   scrollend 随后触发解除标志，之后的滚动就都算用户的。 */
 $('#lyrics').addEventListener('scroll', () => {
-  if(follow && Date.now() - lastProgScroll > 700){
+  if(follow && !progScrolling){
     follow = false;
     $('#fab').classList.remove('hidden');
   }
   checkFab();
 }, { passive: true });
+$('#lyrics').addEventListener('scrollend', endProgScroll, { passive: true });
 
 /* ================= 打点校时 ================= */
 /* 手点必然慢半拍，统一减掉一个固定值，比让用户去抢那一瞬间靠谱 */
