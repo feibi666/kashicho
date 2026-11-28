@@ -114,8 +114,12 @@ body.timing .line .tk{visibility:hidden}
 .line ruby{ruby-align:center}
 .line ruby rt{font-size:.52em;color:var(--accent);letter-spacing:0;font-weight:400;user-select:none;-webkit-user-select:none;pointer-events:none}
 /* 生词释义：放在词下方，注音占上方，两边各一层，互不打架；
-   不占正文宽度、不进剪贴板 */
-.line .hg{position:relative}
+   不占正文宽度、不进剪贴板。
+   虚线标明释义覆盖的范围：是用户选中的整个词（含假名），不是只有汉字 */
+.line .hg{
+  position:relative;
+  border-bottom:1px dashed rgba(180,100,60,.55);
+}
 .line .hg::before{
   content:attr(data-g);position:absolute;left:50%;transform:translateX(-50%);
   top:calc(100% + .16em);
@@ -124,6 +128,7 @@ body.timing .line .tk{visibility:hidden}
 }
 .line.hasgl .jp{line-height:2.62}
 body.nogloss .line .hg::before{display:none}
+body.nogloss .line .hg{border-bottom:0}
 body.nogloss .line.hasgl .jp{line-height:2.05}
 body.timing .line:active{background:var(--accent-soft)}
 
@@ -764,8 +769,9 @@ async function retireLegacyRead(){
     }
   }catch(e){}
 }
-/* 有释义的词：假名照旧交给 ruby，释义另画一层浮在假名上方，
-   不再像早先那样把中文挂在词后面把整行撑宽 */
+/* 有释义的词：注音只标汉字（走 rubyHtml），但释义是整词一个意思，
+   所以 .hg 必须包住**整个词**（含假名），由它画虚线下划线、在下方居中放释义。
+   别把 .hg 缩到汉字上——立ち尽くす 的「伫立不动」是整个词的，不是「立」「尽」的 */
 function rubyWithGloss(surf, reading, gloss){
   let rd = (!reading || reading === '*') ? '' : kata2hira(reading);
   if(rd === surf) rd = '';
