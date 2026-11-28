@@ -634,11 +634,16 @@ function mergeTokens(tks){
   return out;
 }
 
-/* 把读音按送假名规则拆到汉字上：咲く→咲[さ]く、大人→大人[おとな] */
-function rubyWrap(surf, reading){
-  const r0 = reading;
-  if(!r0 || r0 === '*' || !KANJI.test(surf)) return esc(surf);
-  let rt = kata2hira(r0), s = surf, pre = '', suf = '';
+function wholeRuby(pre, s, rt, suf){
+  return esc(pre) + '<ruby>' + esc(s) + '<rt>' + esc(rt) + '</rt></ruby>' + esc(suf);
+}
+
+/* 只给汉字标假名，假名原样留着（用户明确要求）：
+   立ち尽くす(たちつくす) → 立[た]ち尽[つ]くす、売り場(うりば) → 売[う]り場[ば]。
+   做法：先剥首尾送假名，再把剩下的「汉字/假名」交替段用假名当锚点切读音。
+   对不齐就退回整词一个 ruby —— 宁可标得糙，也不能把音标到别的字头上。 */
+function rubyHtml(surf, rt){
+  let s = surf, pre = '', suf = '';
   const mTail = s.match(/[\u3040-\u309F]+$/);
   if(mTail){
     const t = mTail[0];
@@ -650,7 +655,50 @@ function rubyWrap(surf, reading){
     if(rt.length > h.length && rt.startsWith(h)){ pre = h; s = s.slice(h.length); rt = rt.slice(h.length); }
   }
   if(!s || !rt) return esc(surf);
-  return esc(pre) + '<ruby>' + esc(s) + '<rt>' + esc(rt) + '</rt></ruby>' + esc(suf);
+
+  const segs = [];
+  for(let i = 0; i < s.length; ){
+    const k = KANJI.test(s[i]);
+    let j = i + 1;
+    while(j < s.length && KANJI.test(s[j]) === k) j++;
+    segs.push({ k, t: s.slice(i, j) });
+    i = j;
+  }
+  /* 整段都是汉字（大人 / 日本語 / 時々）就整体标，本来就是对的 */
+  if(!segs.some(g => !g.k)) return wholeRuby(pre, s, rt, suf);
+
+  let r = 0, html = '';
+  for(let n = 0; n < segs.length; n++){
+    const g = segs[n];
+    if(g.k){
+      const nx = segs[n + 1];
+      let cut = rt.length;
+      if(nx){
+        /* 本段至少留一个音，再往后面找下一个假名锚点 */
+        cut = rt.indexOf(nx.t, r + 1);
+        if(cut < 0) cut = rt.indexOf(nx.t, r);
+      }
+      if(cut < 0) return wholeRuby(pre, s, rt, suf);
+      const rd = rt.slice(r, cut);
+      if(!rd) return wholeRuby(pre, s, rt, suf);
+      html += '<ruby>' + esc(g.t) + '<rt>' + esc(rd) + '</rt></ruby>';
+      r = cut;
+    } else {
+      if(rt.slice(r, r + g.t.length) !== g.t) return wholeRuby(pre, s, rt, suf);
+      html += esc(g.t);
+      r += g.t.length;
+    }
+  }
+  if(r !== rt.length) return wholeRuby(pre, s, rt, suf);
+  return esc(pre) + html + esc(suf);
+}
+
+/* 把读音按送假名规则拆到汉字上：咲く→咲[さ]く、大人→大人[おとな] */
+function rubyWrap(surf, reading){
+  if(!reading || reading === '*' || !KANJI.test(surf)) return esc(surf);
+  const rt = kata2hira(reading);
+  if(!rt || rt === surf) return esc(surf);
+  return rubyHtml(surf, rt);
 }
 
 /* ================= 生词释义 / 人工注音 ================= */
@@ -721,7 +769,7 @@ async function retireLegacyRead(){
 function rubyWithGloss(surf, reading, gloss){
   let rd = (!reading || reading === '*') ? '' : kata2hira(reading);
   if(rd === surf) rd = '';
-  const inner = rd ? '<ruby>' + esc(surf) + '<rt>' + esc(rd) + '</rt></ruby>' : esc(surf);
+  const inner = rd ? rubyHtml(surf, rd) : esc(surf);
   return '<span class="hg" data-g="' + esc(gloss) + '">' + inner + '</span>';
 }
 
