@@ -27,6 +27,9 @@ button{font-family:inherit;background:none;border:0;color:inherit;padding:0;curs
 
 /* ---------- 歌单页 ---------- */
 #list header{padding:calc(var(--safe-t) + 16px) 18px 10px;display:flex;align-items:baseline;gap:10px}
+/* 右上角「备份 / 恢复」：数据只在本机，换机或清缓存前得能整包搬走 */
+#list header .hact{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:7px;padding:5px 9px;flex:none}
+#list header #btnExport{margin-left:auto}
 #list h1{font-size:20px;font-weight:500;margin:0;letter-spacing:.04em}
 #list h1 span{font-size:11px;color:var(--faint);letter-spacing:0;margin-left:6px}
 .pickbtn{margin:6px 18px 12px;padding:11px 14px;border:1px solid var(--line);background:var(--surf);border-radius:10px;font-size:14px;display:flex;align-items:center;gap:8px}
@@ -92,7 +95,7 @@ body.timing .fab{display:none}
 
 .lyrics{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(var(--safe-t) + 8px) 0 20px;scroll-behavior:smooth}
 .line{display:flex;gap:4px;padding:9px 14px 9px 12px;position:relative}
-/* 行首播放键常驻可点，点了从这句播 */
+/* 行首播放键：原型改成常驻可点，点了从这句播 */
 .line .tk{flex:none;width:16px;height:16px;margin-top:calc(.42em);padding:0;border:0;background:none;display:flex;align-items:center;justify-content:center;opacity:.22;transition:opacity .12s,transform .12s}
 .line .tk::before{content:"";width:0;height:0;border-left:7px solid var(--faint);border-top:5px solid transparent;border-bottom:5px solid transparent}
 .line.cur .tk{opacity:.6}
@@ -201,7 +204,10 @@ input[type=text]::placeholder{color:var(--faint)}
 
 <!-- ========== 歌单 ========== -->
 <div id="list" class="page">
-  <header><h1>歌詞帳<span>假名注音 · 逐句译文</span></h1></header>
+  <header><h1>歌詞帳<span>假名注音 · 逐句译文</span></h1>
+    <button class="hact" id="btnExport">备份</button>
+    <button class="hact" id="btnImport">恢复</button>
+  </header>
   <button class="pickbtn" id="pickDir">选择音乐文件夹</button>
   <button class="pickbtn hidden" id="tempPick">临时选几首歌（本机不记住）</button>
   <div class="songlist" id="songs">
@@ -340,6 +346,20 @@ input[type=text]::placeholder{color:var(--faint)}
     </div>
   </div>
 </div>
+
+<div class="sheet hidden" id="impSheet">
+  <div class="inner">
+    <h2>导入备份</h2>
+    <div class="hint" id="impHint">正在读…</div>
+    <div class="row">
+      <button class="btn" id="impCancel">取消</button>
+      <span class="sp"></span>
+      <button class="btn" id="impSkip">跳过同名</button>
+      <button class="btn primary" id="impOver">覆盖同名</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="impPick" accept=".json,application/json" class="hidden">
 
 <div class="sheet hidden" id="ntSheet">
   <div class="inner">
@@ -1056,6 +1076,11 @@ function prettyName(fn){
   let s = fn.replace(/\.[^.]+$/, '');
   const parts = s.split(/\s+-\s+/);
   if(parts.length >= 2) return { title: parts.slice(1).join(' - '), artist: parts[0] };
+  /* 网易云下载的文件名是「歌手-歌名」，连字符两边没有空格（大原ゆい子-旅人の唄）。
+     只在整串恰好一个连字符、且前半段像歌手名（2~20 字）时才拆，
+     免得把 B-PROJECT、Re-Zero 这类自带连字符的歌名拆坏 */
+  const m = s.match(/^([^-]{2,20})-([^-]{1,})$/);
+  if(m) return { title: m[2].trim(), artist: m[1].trim() };
   return { title: s, artist: '' };
 }
 
@@ -1303,6 +1328,10 @@ async function openSong(i, opts){
   if(!$('#qSheet').classList.contains('hidden')) renderQueue();
   const p = prettyName(s.name);
   $('#pTitle').textContent = p.title;
+  /* 切歌立刻换掉媒体卡片上的歌名：ncm 要解密、flac 要读一会儿，
+     不先改的话锁屏上还挂着上一首的名字 */
+  msSetMetadata(s.name);
+  msSetState('none');
   $('#pTime').textContent = '0:00 / 0:00';
   $('#lyrics').innerHTML = '<div class="empty">正在读取…</div>';
   $('#list').classList.add('hidden');
@@ -1495,6 +1524,7 @@ au.addEventListener('timeupdate', () => {
 
 function updProgress(t){
   $('#pTime').textContent = fmt(t) + ' / ' + fmt(au.duration);
+  msSetPos();
   if(scrubbing) return;
   const p = au.duration ? t / au.duration : 0;
   const el = $('#seek');
@@ -1553,8 +1583,8 @@ function togglePlay(){
   if(au.paused){ au.play().catch(e => toast('播放失败：' + e.message)); }
   else au.pause();
 }
-au.addEventListener('play', () => { $('#btnPlay').classList.add('on'); startTick(); });
-au.addEventListener('pause', () => { $('#btnPlay').classList.remove('on'); savePos(); });
+au.addEventListener('play', () => { $('#btnPlay').classList.add('on'); startTick(); msSetState('playing'); msSetPos(true); });
+au.addEventListener('pause', () => { $('#btnPlay').classList.remove('on'); savePos(); msSetState('paused'); msSetPos(true); });
 function startTick(){ if(!rafId) rafId = requestAnimationFrame(tick); }
 function stopLoop(){ if(rafId){ cancelAnimationFrame(rafId); rafId = 0; } }
 
@@ -1576,10 +1606,9 @@ au.addEventListener('loadedmetadata', () => {
   pendingPos = 0;
   updProgress(au.currentTime);
   if(cur){
-    const p = prettyName(cur.name);
-    if('mediaSession' in navigator && window.MediaMetadata){
-      try{ navigator.mediaSession.metadata = new MediaMetadata({ title: p.title, artist: p.artist }); }catch(e){}
-    }
+    /* 时长有了，媒体卡片这时候才画得出进度条 */
+    msSetMetadata(cur.name);
+    msSetPos(true);
     /* 元数据还没到就构建过的，等时长有了按句重排一次 */
     if(cur.rec && !cur.rec.hasTs && lines.length && lines[lines.length-1].t === 0){
       buildLines().catch(()=>{});
@@ -1957,6 +1986,124 @@ $('#btnLyric').onclick = () => {
   openSheet();
 };
 
+/* ================= 备份：导出 / 导入 ================= */
+/* 歌词、注音、释义全在本机 IndexedDB（`kashicho` 库），清站点数据、换手机就没了。
+   给一份整包 JSON：老机导出带走，新机打开导入。
+   文件夹句柄（FileSystemDirectoryHandle）没法序列化，不导——新机重新授权一次即可。 */
+const BAK_APP = 'kashicho';
+
+/* 把本机数据打成一份可序列化的包；导出用它，测试也用它 */
+async function buildBackup(){
+  const keys = (await DB.keys()).filter(k => typeof k === 'string');
+  const out = { app: BAK_APP, ver: 1, at: new Date().toISOString(), lyrics: {}, gloss: {}, pos: {}, prefs: {} };
+  for(const k of keys){
+    if(k.indexOf('lyr:') === 0) out.lyrics[k.slice(4)] = await DB.get(k);
+    else if(k.indexOf('pos:') === 0) out.pos[k.slice(4)] = await DB.get(k);
+    else if(k === 'gloss') out.gloss = (await DB.get(k)) || {};
+    else if(k === 'allTr' || k === 'mode') out.prefs[k] = await DB.get(k);
+  }
+  return out;
+}
+
+async function exportAll(){
+  try{
+    const out = await buildBackup();
+    const nL = Object.keys(out.lyrics).length, nG = Object.keys(out.gloss).length;
+    if(!nL && !nG){ toast('还没有能导出的内容：先贴一首歌词、或标几个词'); return; }
+    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    /* 中文歌名进不了文件名也别管：固定用日期命名，反正整包一起走 */
+    a.download = 'kashicho-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+    toast('已导出 ' + nL + ' 首歌词、' + nG + ' 条释义，存到手机的下载目录', 4200);
+  }catch(e){
+    toast('导出失败：' + (e.message || e));
+  }
+}
+
+let impData = null;
+
+async function loadBackup(file){
+  impData = null;
+  let txt;
+  try{ txt = await file.text(); }
+  catch(e){ toast('读不了这个文件'); return; }
+  let j;
+  try{ j = JSON.parse(txt); }
+  catch(e){ toast('不是 JSON，或者文件坏了'); return; }
+  if(!j || j.app !== BAK_APP || !j.lyrics || typeof j.lyrics !== 'object'){
+    toast('不是歌詞帳的备份文件'); return;
+  }
+  const names = Object.keys(j.lyrics);
+  if(!names.length && !Object.keys(j.gloss || {}).length){ toast('这份备份是空的'); return; }
+  /* 同名检测：本机已经有歌词的歌，导入前先让用户决定覆盖还是留着 */
+  const same = [];
+  for(const n of names){ if(await DB.get('lyr:' + n)) same.push(n); }
+  impData = j;
+  const at = String(j.at || '').replace('T', ' ').slice(0, 16);
+  $('#impHint').textContent =
+    '备份时间 ' + (at || '未知') + '\n' +
+    '共 ' + names.length + ' 首歌词、' + Object.keys(j.gloss || {}).length + ' 条释义。\n' +
+    (same.length
+      ? '其中 ' + same.length + ' 首本机已有歌词：选「覆盖同名」用备份里的替换，选「跳过同名」保留本机的。'
+      : '本机没有同名的歌，会全部新增。');
+  $('#impSkip').classList.toggle('hidden', !same.length);
+  $('#impOver').textContent = same.length ? '覆盖同名' : '导入';
+  $('#impSheet').classList.remove('hidden');
+}
+
+async function doImport(overwrite){
+  const j = impData;
+  if(!j) return;
+  $('#impSheet').classList.add('hidden');
+  mask(true, '正在导入…');
+  try{
+    let wrote = 0, skipped = 0;
+    for(const n of Object.keys(j.lyrics)){
+      if(!overwrite && await DB.get('lyr:' + n)){ skipped++; continue; }
+      await DB.set('lyr:' + n, j.lyrics[n]);
+      wrote++;
+    }
+    /* 释义只补本机没有的词：手写过的释义比备份里的更 trusted，别反过来盖掉 */
+    const g = j.gloss || {};
+    const gk = Object.keys(g);
+    if(gk.length){
+      const mine = (await DB.get('gloss')) || {};
+      let added = 0;
+      for(const k of gk){ if(!mine[k]){ mine[k] = g[k]; added++; } }
+      if(added){ await DB.set('gloss', mine); GLOSS = mine; }
+    }
+    mask(false);
+    const parts = ['导入 ' + wrote + ' 首'];
+    if(skipped) parts.push('跳过 ' + skipped + ' 首同名');
+    toast(parts.join('，') + '。打开歌曲就能看到', 4200);
+    /* 正在听的那首如果也在备份里，直接换掉内存里那份，不用退出去重进 */
+    if(cur && j.lyrics[cur.name]){
+      cur.rec = (await DB.get('lyr:' + cur.name)) || cur.rec;
+      if(cur.rec) await buildLines();
+    }
+  }catch(e){
+    mask(false);
+    toast('导入出错：' + (e.message || e));
+  }
+}
+
+$('#btnExport').onclick = exportAll;
+$('#btnImport').onclick = () => $('#impPick').click();
+$('#impPick').onchange = ev => {
+  const f = ev.target.files && ev.target.files[0];
+  ev.target.value = '';   /* 清掉选择，同一个文件连选两次也能再触发 */
+  if(f) loadBackup(f);
+};
+$('#impCancel').onclick = () => { impData = null; $('#impSheet').classList.add('hidden'); };
+$('#impSkip').onclick = () => doImport(false);
+$('#impOver').onclick = () => doImport(true);
+
 /* ================= 读音例外（每首歌一份） ================= */
 $('#btnDic').onclick = () => {
   if(!cur || !cur.rec){ toast('先把歌词贴进来'); return; }
@@ -2111,6 +2258,72 @@ $('#ntGo').onclick = async () => {
   }
 };
 
+/* ================= 媒体会话（锁屏 / 通知栏 / 蓝牙耳机按键） ================= */
+/* 安卓上的媒体卡片由 Chrome 自己生成，依据两件事：audio 真的在出声、mediaSession 上有东西。
+   旧版只塞了 title/artist，并且只在 loadedmetadata 里塞一次，没有 artwork、没有上一首
+   下一首、没有进度、没有 playbackState —— 结果就是锁屏上要么什么都没有，要么只剩个空壳。
+   下面这些是让卡片长齐的必要条件，缺一条在某些 ROM 上就不显示。 */
+const MS = ('mediaSession' in navigator) ? navigator.mediaSession : null;
+let msPosAt = 0;
+
+function msArtwork(){
+  try{
+    const base = new URL('.', location.href).href;
+    return [
+      { src: base + 'icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: base + 'icon-192.png', sizes: '192x192', type: 'image/png' }
+    ];
+  }catch(e){ return []; }
+}
+
+function msSetMetadata(name){
+  if(!MS || !window.MediaMetadata) return;
+  const p = prettyName(name || (cur && cur.name) || '');
+  try{
+    MS.metadata = new MediaMetadata({
+      title: p.title || '歌詞帳',
+      artist: p.artist || '歌詞帳',
+      album: '歌詞帳',
+      artwork: msArtwork()
+    });
+  }catch(e){}
+}
+
+function msSetState(st){
+  if(!MS) return;
+  try{ MS.playbackState = st; }catch(e){}
+}
+
+/* 通知栏/锁屏上的进度条与拖动。安卓每秒同步一次足够，太频繁反而掉帧 */
+function msSetPos(force){
+  if(!MS || !MS.setPositionState) return;
+  if(!isFinite(au.duration) || au.duration <= 0) return;
+  const now = Date.now();
+  if(!force && now - msPosAt < 1000) return;
+  msPosAt = now;
+  try{
+    MS.setPositionState({
+      duration: au.duration,
+      playbackRate: au.playbackRate || 1,
+      position: Math.max(0, Math.min(au.currentTime, au.duration))
+    });
+  }catch(e){}
+}
+
+function msBind(){
+  if(!MS) return;
+  const set = (act, fn) => { try{ MS.setActionHandler(act, fn); }catch(e){} };
+  set('play', () => au.play().catch(()=>{}));
+  set('pause', () => au.pause());
+  set('stop', () => au.pause());
+  /* 锁屏上的上一首/下一首：以前没注册，按钮压根不会出现 */
+  set('previoustrack', () => { if(songs.length) playPrev(); });
+  set('nexttrack', () => { if(songs.length) playNext(false); });
+  set('seekbackward', d => { au.currentTime = Math.max(0, au.currentTime - (d.seekOffset || 10)); msSetPos(true); });
+  set('seekforward', d => { const m = isFinite(au.duration) ? au.duration : au.currentTime; au.currentTime = Math.min(m, au.currentTime + (d.seekOffset || 10)); msSetPos(true); });
+  set('seekto', d => { if(d && d.seekTime != null){ au.currentTime = d.seekTime; msSetPos(true); } });
+}
+
 /* ================= 位置记录 ================= */
 /* 暂停、切后台、切歌、关闭页面时记下当前秒数。
    只有「关掉页面再打开、自动恢复上次那首」会读它（openSong 的 auto 分支），
@@ -2125,15 +2338,9 @@ function savePos(){
 document.addEventListener('visibilitychange', () => { if(document.hidden) savePos(); });
 window.addEventListener('pagehide', savePos);
 
-/* Media Session */
-if('mediaSession' in navigator){
-  try{
-    navigator.mediaSession.setActionHandler('play', () => au.play().catch(()=>{}));
-    navigator.mediaSession.setActionHandler('pause', () => au.pause());
-    navigator.mediaSession.setActionHandler('seekbackward', d => { au.currentTime = Math.max(0, au.currentTime - (d.seekOffset || 5)); });
-    navigator.mediaSession.setActionHandler('seekforward', d => { au.currentTime = Math.min(au.duration, au.currentTime + (d.seekOffset || 5)); });
-  }catch(e){}
-}
+/* 只绑一次；回调里读的是全局 au / cur / songs，切歌不用重绑。
+   放在文件靠后执行，确保 playPrev / playNext / songs 都已就位 */
+msBind();
 
 /* 预览模式：地址后加 ?demo 可无音频查看排版 */
 async function runDemo(){
