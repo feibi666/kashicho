@@ -1,4 +1,4 @@
-const SHELL = 'kashicho-shell-v23';
+const SHELL = 'kashicho-shell-v24';
 const DICT = 'kashicho-dict-v4';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './kuromoji.js', './dict-worker.js'];
 
@@ -8,9 +8,18 @@ const DICT_CDN = 'https://fastly.jsdelivr.net/gh/feibi666/kashicho@main/dict/';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
-  e.waitUntil(
-    caches.open(SHELL).then(c => c.addAll(ASSETS)).catch(() => {})
-  );
+  e.waitUntil((async () => {
+    /* 不能用 addAll：它走普通 fetch，会命中 GitHub Pages 给 HTML 的 600s HTTP 缓存，
+       install 抓到的可能还是上一版内容，于是「缓存里永远是旧的」自我延续。
+       逐个 cache:'reload' 强制回源。单个失败不影响其它资源（旧的 addAll 是全军覆没） */
+    const c = await caches.open(SHELL);
+    await Promise.all(ASSETS.map(async (u) => {
+      try{
+        const r = await fetch(u, { cache: 'reload' });
+        if(r && r.ok) await c.put(u, r);
+      }catch(err){}
+    }));
+  })());
 });
 
 self.addEventListener('activate', (e) => {
@@ -57,7 +66,32 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // 自身资源：缓存优先 + 后台更新
+  /* 页面本身（导航、刷新、从主屏图标打开）一律**网络优先**。
+     早先是缓存优先「命中就返回、新内容只写进缓存下次再说」，而 './' 和 './index.html'
+     又都在 ASSETS 里被 precache 了 —— 结果正式版 HTML 被锁死在缓存里，改完代码要
+     bump SHELL 才可能更新；而 bump 后的 sw.js 自己又受 GitHub Pages 的 600s HTTP
+     缓存限制，用户连划七八次窗口都还看到旧版（proto.html 不在 ASSETS 里，所以
+     原型页一直正常，这更让人误判成「正式版代码不对」）。
+     现在：在线永远拿最新 HTML，断网才回落到缓存，离线能力不受影响 */
+  const isHtml = req.mode === 'navigate' ||
+                 url.pathname.endsWith('/') ||
+                 /\.html$/.test(url.pathname);
+  if(isHtml){
+    e.respondWith((async () => {
+      const c = await caches.open(SHELL);
+      try{
+        const r = await fetch(req, { cache: 'reload' });
+        if(r && r.ok) c.put(req, r.clone()).catch(() => {});
+        return r;
+      }catch(err){
+        const hit = await c.match(req, { ignoreSearch: true }) || await c.match('./index.html');
+        return hit || Response.error();
+      }
+    })());
+    return;
+  }
+
+  // 其它自身资源（kuromoji.js、图标）：缓存优先 + 后台更新，体积大、几乎不变
   if (url.origin === location.origin) {
     e.respondWith((async () => {
       const c = await caches.open(SHELL);

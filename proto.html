@@ -2649,9 +2649,32 @@ async function runDemo(){
 }
 
 /* ================= 启动 ================= */
+
+/* 缓存卡住时的自救入口：打开 ./?flush 就注销 SW、清空所有 Cache Storage、回首页重来。
+   只动 caches —— **不碰 IndexedDB**，歌词记录和释义标注不会丢（词典 17MB 会重下） */
+async function flushIfAsked(){
+  if(!/[?&]flush\b/.test(location.search)) return false;
+  try{
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }catch(e){}
+  location.replace(location.pathname);
+  return true;
+}
+
 (async function boot(){
+  if(await flushIfAsked()) return;
+
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    /* updateViaCache:'none'：连 sw.js 自身也不吃 HTTP 缓存。GitHub Pages 给它 600s，
+       默认策略下改完 sw.js 要等 10 分钟浏览器才发现有新版本 */
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+      .then(reg => { reg.update().catch(()=>{}); })
+      .catch(()=>{});
   }
   $('#pickDir').onclick = pickDir;
 
