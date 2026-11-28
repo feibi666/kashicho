@@ -115,20 +115,28 @@ body.timing .line .tk{visibility:hidden}
 .line ruby rt{font-size:.52em;color:var(--accent);letter-spacing:0;font-weight:400;user-select:none;-webkit-user-select:none;pointer-events:none}
 /* 生词释义：放在词下方，注音占上方，两边各一层，互不打架；
    不占正文宽度、不进剪贴板。
-   虚线标明释义覆盖的范围：是用户选中的整个词（含假名），不是只有汉字 */
-.line .hg{
-  position:relative;
-  border-bottom:1px dashed rgba(180,100,60,.55);
+   点线标明释义覆盖的范围：是用户选中的整个词（含假名），不是只有汉字 */
+.line .hg{ position:relative }
+/* 线必须用伪元素画，不能给 .hg 上 border-bottom：
+   里面是 ruby，inline 盒会被拆成多个行框片段，每个片段各画一条线，
+   结果词下方出现两条线、其中一条正压在释义字上 */
+.line .hg::after{
+  content:"";
+  position:absolute;
+  left:-.04em;right:-.04em;bottom:-.12em;
+  border-bottom:2px dotted rgba(158,72,30,.92);
+  pointer-events:none;user-select:none;-webkit-user-select:none;
 }
 .line .hg::before{
   content:attr(data-g);position:absolute;left:50%;transform:translateX(-50%);
-  top:calc(100% + .16em);
+  /* 线在字底下方 .12em，释义再往下让开，两者不打架 */
+  top:calc(100% + .3em);
   font-size:.46em;color:#B4643C;line-height:1;letter-spacing:0;white-space:nowrap;
   pointer-events:none;user-select:none;-webkit-user-select:none;
 }
 .line.hasgl .jp{line-height:2.62}
 body.nogloss .line .hg::before{display:none}
-body.nogloss .line .hg{border-bottom:0}
+body.nogloss .line .hg::after{display:none}
 body.nogloss .line.hasgl .jp{line-height:2.05}
 body.timing .line:active{background:var(--accent-soft)}
 
